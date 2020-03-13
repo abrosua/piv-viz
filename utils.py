@@ -7,12 +7,16 @@ import cv2
 
 
 def getpair(dir: str, n_images: int = 2, extensions: Tuple[str] = ('jpg', 'jpeg', 'png', 'bmp', 'tif', 'ppm')):
+	assert n_images != 1
 
 	img_files = []
 	for ext in extensions:
 		img_files += sorted(glob(os.path.join(dir, f'*.{ext}')))
 
-	return img_files[:n_images]
+	if n_images < 0:
+		return img_files
+	else:
+		return img_files[:n_images]
 
 
 def file_naming(input_name: str, subfolder=None):
