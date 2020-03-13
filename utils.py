@@ -6,6 +6,15 @@ from typing import Tuple
 import cv2
 
 
+def getpair(dir: str, n_images: int = 2, extensions: Tuple[str] = ('jpg', 'jpeg', 'png', 'bmp', 'tif', 'ppm')):
+
+	img_files = []
+	for ext in extensions:
+		img_files += sorted(glob(os.path.join(dir, f'*.{ext}')))
+
+	return img_files[:n_images]
+
+
 def file_naming(input_name: str, subfolder=None):
 	basename, _ = os.path.splitext(os.path.basename(input_name))
 	if subfolder is None:

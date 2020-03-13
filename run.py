@@ -8,19 +8,12 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+from utils import getpair
+
 pivdir = "/home/faber/thesis/thesis_faber"
 sys.path.append(pivdir)
 from inference import Inference, flowname_modifier, write_flow, piv_liteflownet, hui_liteflownet
 from src.utils_plot import quiver_plot
-
-
-def getpair(dir: str, n_images: int = 2, extensions: Tuple[str] = ('jpg', 'jpeg', 'png', 'bmp', 'tif', 'ppm')):
-
-	img_files = []
-	for ext in extensions:
-		img_files += sorted(glob(os.path.join(dir, f'*.{ext}')))
-
-	return img_files[:n_images]
 
 
 if __name__ == '__main__':
