@@ -7,7 +7,7 @@ import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 
-pivdir = "/home/faber/thesis/thesis_faber"
+pivdir = "../thesis_faber"
 sys.path.append(pivdir)
 from src.utils_plot import read_flow, motion_to_color
 
