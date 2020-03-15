@@ -38,8 +38,14 @@ def quiver_plot(flow: np.ndarray, filename: Optional[str] = None, thres: Optiona
     xp, yp = np.meshgrid(x, y)
 
     # ploting the result
-    plt.quiver(xp, yp, u, v)
-    plt.axis('equal')
+    fig1, ax1 = plt.subplots()
+    plot_title = filename if filename else "Endo motion estimator"
+    ax1.set_title(plot_title)
+
+    mag = np.hypot(u, v)
+    q = ax1.quiver(xp, yp, u, v, mag, width=0.022, scale=1 / 0.15)
+    ax1.axis('equal')
+    qk = ax1.quiverkey(q, 0.9, 0.9, 1, r'$1 \frac{pix}{s}$', labelpos='E', coordinates='figure')
     if show:
         plt.show()
 
