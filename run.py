@@ -10,21 +10,24 @@ from tqdm import tqdm
 
 from utils import getpair
 
-pivdir = "/home/faber/thesis/thesis_faber"
+pivdir = "../thesis_faber"
 sys.path.append(pivdir)
 from inference import Inference, flowname_modifier, write_flow, piv_liteflownet, hui_liteflownet
 from src.utils_plot import quiver_plot
 
 
 if __name__ == '__main__':
+	# Run config
+	write = False
+	savefig = False
+
 	dir = "./frames/Test 03 L3 NAOCL 22000 fpstif"
 	loopdir = [None, 5, 10, 100]
+	num_images = -1
 
 	# Net init,
-	num_images = 2
-	write = True
-	savefig = True
-	modeldir = "models/torch/Hui-LiteFlowNet.paramOnly"
+	modeldir = "models/pretrain_torch/Hui-LiteFlowNet.paramOnly"
+	# modeldir = "models/pretrain_torch/PIV-LiteFlowNet-en.paramOnly"
 	args_model = os.path.join(pivdir, modeldir)
 
 	if os.path.isfile(args_model):
@@ -33,7 +36,8 @@ if __name__ == '__main__':
 		raise ValueError('Unknown params input!')
 
 	device = 'cuda' if torch.cuda.is_available() else 'cpu'
-	net = piv_liteflownet(weights).to(device)
+	net = hui_liteflownet(weights).to(device)
+	#net = piv_liteflownet(weights).to(device)
 
 	for i in loopdir:
 		inputdir = dir + f"_{i}" if i else dir
