@@ -7,6 +7,9 @@ import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 
+import matplotlib
+# matplotlib.use('Qt5Agg')
+
 pivdir = "../thesis_faber"
 sys.path.append(pivdir)
 from src.utils_plot import read_flow, motion_to_color
@@ -43,10 +46,12 @@ def quiver_plot(flow: np.ndarray, filename: Optional[str] = None, thres: Optiona
     ax1.set_title(plot_title)
 
     mag = np.hypot(u, v)
-    q = ax1.quiver(xp, yp, u, v, mag, width=0.022, scale=1 / 0.15)
+    q = ax1.quiver(xp, yp, u, v, mag, units='x', scale=0.1)
     ax1.axis('equal')
     qk = ax1.quiverkey(q, 0.9, 0.9, 1, r'$1 \frac{pix}{s}$', labelpos='E', coordinates='figure')
     if show:
+        bottom, top = plt.ylim()  # return the current ylim
+        plt.ylim((top, bottom))  # set the ylim to bottom, top
         plt.show()
 
     if filename is not None:
