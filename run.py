@@ -13,17 +13,19 @@ from utils import getpair
 pivdir = "../thesis_faber"
 sys.path.append(pivdir)
 from inference import Inference, flowname_modifier, write_flow, piv_liteflownet, hui_liteflownet
-from src.utils_plot import quiver_plot
+from src.utils_plot import quiver_plot, read_flow
 
 
 if __name__ == '__main__':
 	# Run config
-	write = False
+	write = True
 	savefig = False
 
-	dir = "./frames/Test 03 L3 NAOCL 22000 fpstif"
-	loopdir = [None, 5, 10, 100]
+	# Input frames init.
+	start_id = 0
 	num_images = -1
+	dir = "./frames/Test 03 L3 NAOCL 22000 fpstif"
+	loopdir = [None]  # [None, 5, 10, 100]
 
 	# Net init,
 	modeldir = "models/pretrain_torch/Hui-LiteFlowNet.paramOnly"
@@ -32,6 +34,7 @@ if __name__ == '__main__':
 
 	if os.path.isfile(args_model):
 		weights = torch.load(args_model)
+		netname = os.path.splitext(os.path.basename(args_model))[0]
 	else:
 		raise ValueError('Unknown params input!')
 
@@ -39,11 +42,14 @@ if __name__ == '__main__':
 	net = hui_liteflownet(weights).to(device)
 	#net = piv_liteflownet(weights).to(device)
 
+	out_names = []
 	for i in loopdir:
 		inputdir = dir + f"_{i}" if i else dir
-		imnames = getpair(inputdir, n_images=num_images)
+		imnames = getpair(inputdir, n_images=num_images, start_at=start_id)
+		num_images = "end" if num_images < 0 else num_images
 
-		outdir = os.path.join("results", os.path.basename(inputdir))
+		outsubdir = f"{os.path.basename(inputdir)}-{start_id}_{num_images}"
+		outdir = os.path.join("./results", netname, outsubdir)
 		os.makedirs(outdir) if not os.path.isdir(outdir) else None
 
 		prev_frame = None
@@ -57,6 +63,7 @@ if __name__ == '__main__':
 				out_name = flowname_modifier(prev_frame, outdir, pair=False)
 				if write:
 					write_flow(out_flow, out_name)
+					out_names.append(out_name)
 
 				# Save quiver plot
 				if savefig:

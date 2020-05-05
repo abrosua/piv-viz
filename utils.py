@@ -6,7 +6,8 @@ from typing import Tuple
 import cv2
 
 
-def getpair(dir: str, n_images: int = 2, extensions: Tuple[str] = ('jpg', 'jpeg', 'png', 'bmp', 'tif', 'ppm')):
+def getpair(dir: str, n_images: int = 2, start_at: int = 0,
+			extensions: Tuple[str] = ('jpg', 'jpeg', 'png', 'bmp', 'tif', 'ppm')):
 	assert n_images != 1
 
 	img_files = []
@@ -14,9 +15,9 @@ def getpair(dir: str, n_images: int = 2, extensions: Tuple[str] = ('jpg', 'jpeg'
 		img_files += sorted(glob(os.path.join(dir, f'*.{ext}')))
 
 	if n_images < 0:
-		return img_files
+		return img_files[start_at:]
 	else:
-		return img_files[:n_images]
+		return img_files[start_at : start_at+n_images]
 
 
 def file_naming(input_name: str, subfolder=None):
@@ -30,7 +31,7 @@ def file_naming(input_name: str, subfolder=None):
 	if not os.path.isdir(dirname):
 		os.makedirs(dirname)
 
-	return basename, dirname
+	return dirname, basename
 
 
 def copyfile(dir: str, targetdir: str, skip_count: int = 1,
