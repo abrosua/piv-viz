@@ -1,10 +1,10 @@
 import cv2
 import os
 
-from PIL import Image, ImageSequence
-from pycine.color import color_pipeline, resize
-from pycine.raw import read_frames
 from tqdm import tqdm
+from PIL import Image, ImageSequence
+# from pycine.color import color_pipeline, resize
+# from pycine.raw import read_frames
 
 from utils import file_naming
 
@@ -41,11 +41,15 @@ def display_frames(cine_file, start_frame=1, count=1, skip_count=1):
 
 
 def extract_multitiff(multipage_tiff, skip_count=1):
-	basename, dirname = file_naming(multipage_tiff)
+	dirname, basename = file_naming(multipage_tiff)
+	if not os.path.isdir(dirname):
+		os.makedirs(dirname)
+
 	multi_img = Image.open(multipage_tiff)
 
+	# Iterate images from the multi-tiff image
 	for i, page in tqdm(enumerate(ImageSequence.Iterator(multi_img)), desc=basename, unit='frames'):
-		filename = f"{basename}_{str(i).zfill(4)}.tif"
+		filename = f"{basename}_{str(i).zfill(5)}.tif"
 
 		if i % skip_count == 0:
 			page.save(os.path.join(dirname, filename))
@@ -54,5 +58,5 @@ def extract_multitiff(multipage_tiff, skip_count=1):
 if __name__ == "__main__":
 	# display_frames("./endo-raw/Test 03 L3 NAOCL 22000 fps.cine", count=100, skip_count=1)
 
-	multitiff_file = "./endo-raw/tes/Test 03 L3 NAOCL 22000 fpstif.tif"
+	multitiff_file = "./endo-raw/multitif/Test 03 L3 EDTA 22000 fpstif.tif"
 	extract_multitiff(multitiff_file)
