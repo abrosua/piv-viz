@@ -4,6 +4,7 @@
 .idea/
 frames/*
 results/*
+labels/*
 backup/
 endo-raw/
 endo-venv/
@@ -18,6 +19,7 @@ endo-venv/
 # !!! Exception !!!
 !frames/demo/
 !results/demo/
+!labels/demo/
 
 # ----------------------------------------
 
