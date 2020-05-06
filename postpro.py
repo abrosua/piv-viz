@@ -20,8 +20,16 @@ sys.path.append(pivdir)
 from src.utils_plot import read_flow, read_flow_collection, motion_to_color
 
 
-def use_flowviz(flodir, imdir, lossless: bool = True):
-    flows, flonames = read_flow_collection(flodir)
+def use_flowviz(flodir, imdir, start_at: int = 0, num_images: int = -1, lossless: bool = True):
+    """
+    Visualization using flowviz module
+    """
+    print("Optical flow visualization using flowviz by marximus")
+
+    # Obtaining the flo files and file basename
+    flows, flonames = read_flow_collection(flodir, start_at=start_at, num_images=num_images)
+    fname_addition = f"-{start_at}_all" if num_images < 0 else f"-{start_at}_{num_images}"
+    fname = os.path.basename(flodir).rsplit('-', 1)[0] + fname_addition
 
     # Manage the input images
     video_list = []
@@ -48,10 +56,10 @@ def use_flowviz(flodir, imdir, lossless: bool = True):
         os.makedirs(viddir)
 
     if lossless:
-        vidpath = os.path.join(viddir, os.path.basename(flodir) + ".avi")
+        vidpath = os.path.join(viddir, fname + ".avi")
         flowanim.save(vidpath, codec="ffv1")
     else:
-        vidpath = os.path.join(viddir, os.path.basename(flodir) + ".mp4")
+        vidpath = os.path.join(viddir, fname + ".mp4")
         flowanim.save(vidpath)
     print(f"Finish saving the video file ({vidpath})!")
 
@@ -181,9 +189,9 @@ def _velo_mean(flo: np.array, mask: Optional[np.array] = None):
 
 if __name__ == '__main__':
     # Use flowviz (uncomment for usage)
-    # flodir = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif-4900_50"
-    # imdir = "./frames/Test 03 L3 NAOCL 22000 fpstif"
-    # use_flowviz(flodir, imdir, lossless=False)
+    flodir = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif-0_end"
+    imdir = "./frames/Test 03 L3 NAOCL 22000 fpstif"
+    use_flowviz(flodir, imdir, start_at=4900, num_images=50, lossless=False)
 
     # Use get_label (uncomment for usage)
     # flopaths = ["./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif-4900_50/Test 03 L3 NAOCL 22000 fpstif_04900_out.flo"]
