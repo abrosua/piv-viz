@@ -58,5 +58,5 @@ def extract_multitiff(multipage_tiff, skip_count=1):
 if __name__ == "__main__":
 	# display_frames("./endo-raw/Test 03 L3 NAOCL 22000 fps.cine", count=100, skip_count=1)
 
-	multitiff_file = "./endo-raw/multitif/Test 03 L3 EDTA 22000 fpstif.tif"
+	multitiff_file = "./endo-raw/multitif/Test 02 L3 EDTA ND TIP 22000 fpstif.tif"
 	extract_multitiff(multitiff_file)

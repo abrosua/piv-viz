@@ -24,7 +24,7 @@ if __name__ == '__main__':
 	# Input frames init.
 	start_id = 0
 	num_images = -1
-	dir = "./frames/Test 03 L3 NAOCL 22000 fpstif"
+	dir = "./frames/Test 02 L3 EDTA END TIP 22000 fpstif"
 	loopdir = [None]  # [None, 5, 10, 100]
 
 	# Net init,
