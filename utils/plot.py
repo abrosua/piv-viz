@@ -36,7 +36,7 @@ def singleplot(floname, imdir, use_flowviz=False):
         flow = out_flow.reshape([1, *out_flow.shape])
         colors = colorflow.motion_to_color(flow)
         flowanim = animate.FlowAnimation(video=np.array([image]), video2=colors, vector=flow, vector_step=10,
-                                         video2_alpha=0.5, scale=0.5)
+                                         video2_alpha=0.5)
         rgba = flowanim.to_rgba()
         plt.imshow(rgba[0], interpolation='none')
 

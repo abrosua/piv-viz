@@ -50,7 +50,7 @@ def use_flowviz(flodir, imdir, start_at: int = 0, num_images: int = -1, lossless
     # Define the output files
     colors = colorflow.motion_to_color(flows)
     flowanim = animate.FlowAnimation(video=video, video2=colors, vector=flows, vector_step=10,
-                                     video2_alpha=0.5, scale=0.5)
+                                     video2_alpha=0.5)
 
     # Saving the video
     viddir = os.path.join(os.path.dirname(flodir), "videos")
