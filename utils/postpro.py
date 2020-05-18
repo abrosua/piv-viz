@@ -66,26 +66,36 @@ def use_flowviz(flodir, imdir, start_at: int = 0, num_images: int = -1, lossless
     print(f"Finish saving the video file ({vidpath})!")
 
 
-def get_label(flopaths: List[str,], labeldir: str = './labels'):
+def get_label(flopaths: List[str,], labeldir: str = './labels', verbose: int = 0):
     labels = {}
     print(os.getcwd())
+    check_miss = 0
 
     # Iterate over all the input flo paths
     for flo in flopaths:
-        label_name = os.path.basename(flo).rsplit('_', 1)[0] + ".json"
-        basedir = os.path.basename(os.path.dirname(flo)).rsplit('-', 1)[0]
-        label_path = os.path.join(labeldir, basedir, label_name)
+        if os.path.isfile(flo):
+            label_name = os.path.basename(flo).rsplit('_', 1)[0] + ".json"
+            basedir = os.path.basename(os.path.dirname(flo)).rsplit('-', 1)[0]
+            label_path = os.path.join(labeldir, basedir, label_name)
 
-        with open(label_path) as json_file:
-            data = json.load(json_file)
-            img_shape = [data['imageHeight'], data['imageWidth']]
-            label = {}
+            with open(label_path) as json_file:
+                data = json.load(json_file)
+                img_shape = [data['imageHeight'], data['imageWidth']]
+                label = {}
 
-            for d in data['shapes']:
-                mask = shape_to_mask(img_shape, d['points'], shape_type=d['shape_type'])
-                label[d['label']] = {'flo': _masked_flo(flo, mask), 'mask': mask}
+                for d in data['shapes']:
+                    mask = shape_to_mask(img_shape, d['points'], shape_type=d['shape_type'])
+                    label[d['label']] = {'flo': _masked_flo(flo, mask), 'mask': mask}
 
-        labels[flo] = label
+            labels[flo] = label
+
+        else:
+            check_miss += 1
+            print(f"Flow file at '{flo}' is NOT FOUND!") if verbose else None
+
+    if verbose and not check_miss:
+        print("All flow files ARE available!")
+
     return labels
 
 
