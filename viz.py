@@ -6,8 +6,8 @@ from typing import Optional, List, Tuple, Union
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from matplotlib.colors import Normalize
-from flowviz import colorflow, animate
+import matplotlib.ticker as ticker
+from flowviz import colorflow
 
 import utils  # Import the utils directory as module
 
@@ -20,6 +20,11 @@ class FlowViz:
                  verbose: int = 0) -> None:
         """
         Flow visualization instance
+        params:
+            flopaths:
+            file_extension:
+            show:
+            verbose:
         """
         self.labels = utils.get_label(flopaths, verbose=verbose)
         self.file_extension = file_extension
@@ -30,10 +35,16 @@ class FlowViz:
         """
         Main
         params:
-            method:
+            vector_step:
+            use_color:
+            use_quiver:
+            vorticity:
+            crop_window:
         """
         for flopath, label in self.labels.items():
+            # Init.
             bname = os.path.basename(flopath).rsplit('_', 1)[0]
+            keyname = ''
 
             # Image masking
             imdir_base = os.path.basename(os.path.dirname(flopath)).rsplit('-', 1)[0]
@@ -65,6 +76,7 @@ class FlowViz:
                 # Superpose the image and flow color visualization if use_color is activated
                 masked_img[flow_mask] = 0
                 merge_img = masked_img + flo_color
+                keyname += 'c'
             else:
                 masked_img[flow_mask] = 255
                 merge_img = masked_img
@@ -72,7 +84,9 @@ class FlowViz:
             # Viz
             plt.figure()
             plt.imshow(merge_img)
-            self.quiver_plot(u, v, vector_step, vector_color = not use_color, **quiver_key)
+            if use_quiver:
+                self.quiver_plot(u, v, flow_mask, vector_step, vector_color = not use_color, **quiver_key)
+                keyname += 'q'
             # Erasing the axis number
             plt.xticks([])
             plt.yticks([])
@@ -82,15 +96,16 @@ class FlowViz:
 
             if self.file_extension:
                 # Setting up the path name
-                plotdir = os.path.join(os.path.dirname(os.path.dirname(flopath)), "viz")
+                plotdir = os.path.join(os.path.dirname(os.path.dirname(flopath)), "viz", imdir_base)
                 os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
                 # Saving the plot
-                plotpath = os.path.join(plotdir, bname + f"_viz.{self.file_extension}")
+                plotpath = os.path.join(plotdir, bname + f"_{keyname}viz.{self.file_extension}")
                 plt.savefig(plotpath, dpi=300, bbox_inches='tight')
 
             plt.clf()
 
-    def quiver_plot(self, u, v, vector_step: int = 1, vector_color: bool = False, **quiver_key):
+    def quiver_plot(self, u, v, mask, vector_step: int = 1, vector_color: bool = False,
+                    **quiver_key) -> None:
         """
         Quiver plot config.
         params:
@@ -104,34 +119,58 @@ class FlowViz:
         up, vp = u[::vector_step, ::vector_step], v[::vector_step, ::vector_step]
         mag = np.hypot(up, vp)
 
+        # Plotting preparation and Masking the data
+        maskp = mask[::vector_step, ::vector_step]
+        X, Y, U, V, MAG = xp[maskp], yp[maskp], up[maskp], vp[maskp], mag[maskp]
+        width_factor = 0.004
+
         if vector_color:
             # Setting the vector color
             colormap = cm.inferno
-            q = plt.quiver(xp, yp, up, -vp, mag, cmap=colormap, units='xy', width=0.005*w)
+            q = plt.quiver(X, Y, U, -V, MAG, cmap=colormap,
+                           units='xy', width=width_factor*w)
             plt.colorbar()
         else:
-            q = plt.quiver(xp, yp, up, -vp, units='xy', width=0.004*w)
+            q = plt.quiver(X, Y, U, -V,
+                           units='xy', width=width_factor*w)
 
         qk = plt.quiverkey(q, **quiver_key) if quiver_key else None
 
     @staticmethod
-    def color_map(resolution: int = 256, vector_step: int = 1,
+    def color_map(resolution: int = 256, maxmotion: float = 1.0, vector_step: int = 1,
                   show: bool = False, filename: Optional[str] = None) -> None:
         """
         Plotting the color code
+        params:
+            resolution: Colormap image resolution.
+            maxmotion: Maximum flow motion.
+            vector_step: Vector shifting variable
+            show: Option to display the plot or not.
+            filename: Full file path to save the plot; use None for not saving the plot!
         """
         # Color plot
-        x_tmp, y_tmp = np.meshgrid(np.arange(resolution)[::-1], np.arange(resolution)[::-1])
-        flo_tmp = np.dstack([x_tmp, y_tmp]) - (resolution - 1) / 2
-        # flo_tmp[:, :, 1] *= -1
-        flo_tmp_color = colorflow.motion_to_color(flo_tmp)
+        pts = np.linspace(-maxmotion, maxmotion, num=resolution)
+        x, y = np.meshgrid(pts/maxmotion, pts/maxmotion)
+        flo = np.dstack([x, y])
+        flo_color = colorflow.motion_to_color(flo)
 
-        xk, yk = x_tmp[::vector_step, ::vector_step], y_tmp[::vector_step, ::vector_step]
-        uk, vk = flo_tmp[::vector_step, ::vector_step, 0], flo_tmp[::vector_step, ::vector_step, 1]
+        # Plotting the image
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        ax.imshow(flo_color, extent=[-maxmotion, maxmotion, -maxmotion, maxmotion])
 
-        plt.figure()
-        plt.imshow(flo_tmp_color)
-        plt.quiver(xk, yk, uk, -vk)
+        # Erasing the zeros
+        func = lambda x, pos: "" if np.isclose(x, 0) else x
+        plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(func))
+        plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(func))
+
+        # Putting the axis in the middle of the graph, passing through (0,0)
+        ax.spines['left'].set_position('center')  # Move left y-axis and bottim x-axis to centre
+        ax.spines['bottom'].set_position('center')
+        ax.spines['right'].set_color('none')  # Eliminate upper and right axes
+        ax.spines['top'].set_color('none')
+        ax.xaxis.set_ticks_position('bottom')  # Show ticks in the left and lower axes only
+        ax.yaxis.set_ticks_position('left')
 
         plt.show() if show else None
         plt.savefig(filename, dpi=300, bbox_inches='tight') if filename else None
@@ -140,13 +179,14 @@ class FlowViz:
 
 if __name__ == "__main__":
     # INPUT
-    ext = 'eps'  # 'png' for standard image and 'eps' for latex format
+    ext = None  # 'png' for standard image and 'eps' for latex format; use None to disable!
     show_figure = False
     flopaths = ["./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif-0_end/Test 03 L3 NAOCL 22000 fpstif_04900_out.flo"]
 
     # Main
     cropper = (100, 0, 0, 0)
     flow_visualizer = FlowViz(flopaths, file_extension=ext, show=show_figure, verbose=1)
-    flow_visualizer(vector_step=6, use_color=False, crop_window=cropper)
+    flow_visualizer(vector_step=5, use_quiver=True, use_color=True, crop_window=cropper)
+    flow_visualizer.color_map(maxmotion=4, show=True)
 
     print("DONE!")
