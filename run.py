@@ -1,5 +1,4 @@
 import os
-import sys
 from glob import glob
 from typing import Tuple
 
@@ -8,18 +7,17 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-from utils import getpair
+from utils import tools
+from utils import Inference, hui_liteflownet, piv_liteflownet, flowname_modifier, write_flow
 
-pivdir = "../thesis_faber"
-sys.path.append(pivdir)
-from inference import Inference, flowname_modifier, write_flow, piv_liteflownet, hui_liteflownet
-from src.utils_plot import quiver_plot, read_flow
+maindir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(maindir)
+pivdir = os.path.join(os.path.dirname(maindir), "thesis_faber")
 
 
 if __name__ == '__main__':
 	# Run config
 	write = True
-	savefig = False
 
 	# Input frames init.
 	start_id = 0
@@ -45,11 +43,15 @@ if __name__ == '__main__':
 	out_names = []
 	for i in loopdir:
 		inputdir = dir + f"_{i}" if i else dir
-		imnames = getpair(inputdir, n_images=num_images, start_at=start_id)
-		num_images = "end" if num_images < 0 else num_images
+		imnames = tools.getpair(inputdir, n_images=num_images, start_at=start_id)
 
-		outsubdir = f"{os.path.basename(inputdir)}-{start_id}_{num_images}"
-		outdir = os.path.join("./results", netname, outsubdir)
+		# Name checking
+		num_images = "end" if num_images < 0 else num_images
+		is_all_flow = (start_id == 0) and (num_images < 0)
+
+		outsubdir = f"{os.path.basename(inputdir)}-{start_id}_{num_images}" if not is_all_flow \
+			else os.path.basename(inputdir)
+		outdir = os.path.join("./results", netname, outsubdir, "flow")
 		os.makedirs(outdir) if not os.path.isdir(outdir) else None
 
 		prev_frame = None
@@ -64,11 +66,6 @@ if __name__ == '__main__':
 				if write:
 					write_flow(out_flow, out_name)
 					out_names.append(out_name)
-
-				# Save quiver plot
-				if savefig:
-					figname = os.path.splitext(out_name)[0] + ".png"
-					quiver_plot(out_flow, filename=figname)
 
 			prev_frame = curr_frame
 

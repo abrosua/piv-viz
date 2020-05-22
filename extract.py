@@ -3,14 +3,14 @@ import os
 
 from tqdm import tqdm
 from PIL import Image, ImageSequence
-# from pycine.color import color_pipeline, resize
-# from pycine.raw import read_frames
+from pycine.color import color_pipeline, resize
+from pycine.raw import read_frames
 
-from utils import file_naming
+from utils import tools
 
 
 def display_frames(cine_file, start_frame=1, count=1, skip_count=1):
-	basename, dirname = file_naming(cine_file)
+	basename, dirname = tools.file_naming(cine_file)
 
 	raw_images, setup, bpp = read_frames(cine_file, start_frame=start_frame, count=count)
 	# rgb_images = (color_pipeline(raw_image, setup=setup, bpp=bpp) for raw_image in raw_images)
@@ -41,7 +41,7 @@ def display_frames(cine_file, start_frame=1, count=1, skip_count=1):
 
 
 def extract_multitiff(multipage_tiff, skip_count=1):
-	dirname, basename = file_naming(multipage_tiff)
+	dirname, basename = tools.file_naming(multipage_tiff)
 	if not os.path.isdir(dirname):
 		os.makedirs(dirname)
 
