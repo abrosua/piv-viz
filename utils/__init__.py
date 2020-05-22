@@ -2,8 +2,9 @@ import os
 import sys
 
 # init for post-processing
-from .plot import singleplot, quiver_plot, checkstat
-from .postpro import get_label, use_flowviz, velo_mean
+from .plot import color_map, use_flowviz, FlowViz
+from .postpro import Label, velo_mean, checkstat
+from .tools import getpair, file_naming, copyfile
 
 # Manage the working directory
 maindir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,3 +14,4 @@ os.chdir(maindir)
 pivdir = os.path.join(os.path.dirname(maindir), "thesis_faber")
 sys.path.append(pivdir)
 from src.utils_plot import read_flow, read_flow_collection
+from inference import Inference, flowname_modifier, write_flow, piv_liteflownet, hui_liteflownet
