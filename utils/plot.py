@@ -1,123 +1,230 @@
-import sys
 import os
 import imageio
-from typing import Optional, List
+from typing import Optional, List, Union, Tuple
 
 import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
-from flowviz import animate, colorflow
+import matplotlib.ticker as ticker
+import matplotlib.cm as cm
+from flowviz import colorflow, animate
 
+import utils
 import matplotlib
 matplotlib.use('TkAgg')
 
-# Manage the working directory
-maindir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-os.chdir(maindir)
 
-# Importing from LiteFlowNet
-pivdir = os.path.join(os.path.dirname(maindir), "thesis_faber")
-sys.path.append(pivdir)
-from src.utils_plot import read_flow, read_flow_collection
+class FlowViz:
+    def __init__(self, labelpaths: List[str], maxmotion: Optional[float] = None,
+                 file_extension: Optional[str] = None, show: bool = False,
+                 verbose: int = 0) -> None:
+        """
+        Flow visualization instance
+        params:
+            flopaths:
+            netname:
+            file_extension:
+            show:
+            verbose:
+        """
+        self.labelpaths = labelpaths
+        self.maxmotion = maxmotion
+        self.file_extension = file_extension
+        self.show = show
+        self.verbose = verbose
+
+    def __call__(self, netname: str, vector_step: int = 1, use_color: bool = True, use_quiver: bool = True,
+                 vorticity: bool = False, crop_window: Union[int, Tuple[int, int, int, int]] = 0,
+                 **quiver_key) -> None:
+        """
+        Main
+        params:
+            vector_step:
+            use_color:
+            use_quiver:
+            vorticity:
+            crop_window:
+        """
+        for labelpath in self.labelpaths:
+            # Init.
+            label = utils.Label(labelpath, netname, verbose=self.verbose)
+            bname = os.path.splitext(os.path.basename(labelpath))[0]
+            keyname = ''
+
+            # Add flow field
+            flow, mask = label.get_flo("flow")
+            if flow is None or mask is None:  # Skipping label file that doesn't have the flow label!
+                continue
+            h, w, c = flow.shape  # Create image cropper
+            crop_window = (crop_window,) * 4 if type(crop_window) is int else crop_window
+            assert len(crop_window) == 4
+
+            # Cropping the flow
+            flow_crop = flow[crop_window[0] : h-crop_window[1], crop_window[2] : w-crop_window[3], :]
+            mask_crop = mask[crop_window[0] : h-crop_window[1], crop_window[2] : w-crop_window[3]]
+            u, v = flow_crop[:, :, 0], flow_crop[:, :, 1]
+
+            flow_crop[~mask_crop] = 0.0  # Replacing NaNs with zero to convert the value into RGB
+            if vorticity:
+                flo_color = None  #TODO create vorticity calculation function!
+            else:
+                flo_color = colorflow.motion_to_color(flow_crop, maxmotion=self.maxmotion)
+            flo_color[~mask_crop] = 0  # Merging image and plot the result
+
+            # Image masking
+            impath = label.img_path
+            img = imageio.imread(impath)  # Read the raw image
+            masked_img = img[crop_window[0]: h - crop_window[1], crop_window[2]: w - crop_window[2], :]
+
+            if use_color:
+                # Superpose the image and flow color visualization if use_color is activated
+                masked_img[mask_crop] = 0
+                merge_img = masked_img + flo_color
+                keyname += 'c'
+            else:
+                masked_img[mask_crop] = 255
+                merge_img = masked_img
+
+            # Viz
+            plt.figure()
+            plt.imshow(merge_img)
+            if use_quiver:
+                self.quiver_plot(u, v, mask_crop, vector_step, vector_color = not use_color, **quiver_key)
+                keyname += 'q'
+            # Erasing the axis number
+            plt.xticks([])
+            plt.yticks([])
+
+            if self.show:
+                plt.show()
+
+            if self.file_extension:
+                # Setting up the path name
+                plotdir = os.path.join("./results", netname, label.img_dir, "viz")
+                os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
+                # Saving the plot
+                plotpath = os.path.join(plotdir, bname + f"_{keyname}viz.{self.file_extension}")
+                plt.savefig(plotpath, dpi=300, bbox_inches='tight')
+
+            plt.clf()
+
+    def quiver_plot(self, u, v, mask, vector_step: int = 1, vector_color: bool = False,
+                    **quiver_key) -> None:
+        """
+        Quiver plot config.
+        params:
+            u: Flow displacement at x-direction.
+            v: Flow displacement at y-direction.
+            vector_step: Number of step for displaying the vector
+        """
+        h, w = u.shape
+        x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+        xp, yp = x[::vector_step, ::vector_step], y[::vector_step, ::vector_step]
+        up, vp = u[::vector_step, ::vector_step], v[::vector_step, ::vector_step]
+        mag = np.hypot(up, vp)
+
+        # Plotting preparation and Masking the data
+        maskp = mask[::vector_step, ::vector_step]
+        X, Y, U, V, MAG = xp[maskp], yp[maskp], up[maskp], vp[maskp], mag[maskp]
+        width_factor = 0.004
+
+        if vector_color:
+            # Setting the vector color
+            colormap = cm.inferno
+            q = plt.quiver(X, Y, U, -V, MAG, cmap=colormap,
+                           units='xy', width=width_factor*w)
+            plt.colorbar()
+        else:
+            q = plt.quiver(X, Y, U, -V,
+                           units='xy', width=width_factor*w)
+
+        qk = plt.quiverkey(q, **quiver_key) if quiver_key else None
 
 
-def singleplot(floname, imdir, use_flowviz=False):
-    # Generate image name from the flo file
-    basename = str(os.path.basename(floname).rsplit('_', 1)[0])
-    subdir = os.path.basename(os.path.dirname(floname)).rsplit('-', 1)[0]
-    imname = os.path.join(imdir, subdir, basename + ".tif")
+def use_flowviz(flodir, imdir, start_at: int = 0, num_images: int = -1, lossless: bool = True):
+    """
+    Visualization using flowviz module
+    """
+    print("Optical flow visualization using flowviz by marximus")
 
-    # Generating the data
-    image = imageio.imread(imname)
-    out_flow = read_flow(floname)
+    # Obtaining the flo files and file basename
+    flows, flonames = utils.read_flow_collection(flodir, start_at=start_at, num_images=num_images)
+    fname_addition = f"-{start_at}_all" if num_images < 0 else f"-{start_at}_{num_images}"
+    fname = os.path.basename(os.path.dirname(flodir)) + fname_addition
 
-    # plotting image
-    if use_flowviz:
-        flow = out_flow.reshape([1, *out_flow.shape])
-        colors = colorflow.motion_to_color(flow)
-        flowanim = animate.FlowAnimation(video=np.array([image]), video2=colors, vector=flow, vector_step=10,
-                                         video2_alpha=0.5)
-        rgba = flowanim.to_rgba()
-        plt.imshow(rgba[0], interpolation='none')
+    # Manage the input images
+    video_list = []
+    for floname in flonames:
+        filename = os.path.basename(floname).rsplit('_', 1)[0] + ".tif"
+        filepath = os.path.join(imdir, filename)
+        video_list.append(imageio.imread(filepath))
+        # video_list.append(Image.open(filepath).convert('RGB'))
 
+    video = np.array(video_list)
+
+    # Previewing the files
+    print('Video shape: {}'.format(video.shape))
+    print('Flows shape: {}'.format(flows.shape))
+
+    # Define the output files
+    colors = colorflow.motion_to_color(flows)
+    flowanim = animate.FlowAnimation(video=video, video2=colors, vector=flows, vector_step=10,
+                                     video2_alpha=0.5)
+
+    # Saving the video
+    viddir = os.path.join(os.path.dirname(flodir), "videos")
+    if not os.path.isdir(viddir):
+        os.makedirs(viddir)
+
+    if lossless:
+        vidpath = os.path.join(viddir, fname + ".avi")
+        flowanim.save(vidpath, codec="ffv1")
     else:
-        quiver_plot(out_flow, img=image, thres=0.1, show=True)
+        vidpath = os.path.join(viddir, fname + ".mp4")
+        flowanim.save(vidpath)
+    print(f"Finish saving the video file ({vidpath})!")
 
 
-def quiver_plot(flow: np.ndarray, img: Optional[np.array] = None, filename: Optional[str] = None,
-                thres: Optional[float] = None, show: bool = False) -> None:
-    flow = _quiver_clean(flow, threshold=thres) if thres and thres > 1 else flow
-    u = flow[:, :, 0]
-    v = flow[:, :, 1]
+def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False, filename: Optional[str] = None
+              ) -> None:
+    """
+    Plotting the color code
+    params:
+        resolution: Colormap image resolution.
+        maxmotion: Maximum flow motion.
+        show: Option to display the plot or not.
+        filename: Full file path to save the plot; use None for not saving the plot!
+    """
+    # Color plot
+    pts = np.linspace(-maxmotion, maxmotion, num=resolution)
+    x, y = np.meshgrid(pts, pts)
+    flo = np.dstack([x, y])
+    flo_color = colorflow.motion_to_color(flo)
 
-    # Setting up the quiver plot
-    h, w = u.shape
-    x = np.arange(0, w) + 0.5
-    y = np.arange(0, h)[::-1] + 0.5
-    xp, yp = np.meshgrid(x, y)
+    # Plotting the image
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    ax.imshow(flo_color, extent=[-maxmotion, maxmotion, -maxmotion, maxmotion])
 
-    # ploting the result
-    fig, ax = plt.subplots()
+    # Erasing the zeros
+    func = lambda x, pos: "" if np.isclose(x, 0) else x
+    plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(func))
+    plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(func))
 
-    plot_title = filename if filename else "Endo motion estimator"
-    ax.set_title(plot_title)
+    # Putting the axis in the middle of the graph, passing through (0,0)
+    ax.spines['left'].set_position('center')  # Move left y-axis and bottim x-axis to centre
+    ax.spines['bottom'].set_position('center')
+    ax.spines['right'].set_color('none')  # Eliminate upper and right axes
+    ax.spines['top'].set_color('none')
+    ax.xaxis.set_ticks_position('bottom')  # Show ticks in the left and lower axes only
+    ax.yaxis.set_ticks_position('left')
 
-    mag = np.hypot(u, v)
-    q = ax.quiver(xp, yp, u, v, mag, units='x', scale=0.1, alpha=0.1)
-    ax.axis('equal')
-
-    if img is not None:  # merge plot with image (if available)
-        ax.imshow(img)  # , extent=[0, w, h, 0])
-
-    qk = ax.quiverkey(q, 0.9, 0.9, 1, r'$1 \frac{pix}{s}$', labelpos='E', coordinates='figure')
-    if show:
-        bottom, top = plt.ylim()  # return the current ylim
-        plt.ylim((top, bottom))  # set the ylim to bottom, top
-        plt.show()
-
-    if filename is not None:
-        assert type(filename) is str, "File is not str (%r)" % str(filename)
-        assert filename[-4:] == '.png', "File extension is not an image format (%r)" % filename[-4:]
-        plt.savefig(filename)
-
+    plt.show() if show else None
+    plt.savefig(filename, dpi=300, bbox_inches='tight') if filename else None
     plt.clf()
 
 
-def _quiver_clean(flow: np.array, threshold: float = 0.05) -> np.array:
-    flowval = np.linalg.norm(flow, axis=2)
-    flow[flowval <= threshold] = np.nan  # avoid plotting vector
-
-    return flow
-
-
-def checkstat(data):
-    sns.distplot(data, hist=True, kde=True,
-                 bins=int(180 / 5), color='darkblue',
-                 hist_kws={'edgecolor': 'black'},
-                 kde_kws={'linewidth': 4})
-    plt.show()
-
-
 if __name__ == "__main__":
-    # Image source
-    imdir = "./frames"
-    inputdir = 'Test 03 L3 NAOCL 22000 fpstif-4900_30'
-
-    # Flow source
-    flodirs = [os.path.join('./results', netname) for netname in ['Hui-LiteFlowNet', 'PIV-LiteFlowNet-en']]
-    flosubdirs = [inputdir + f"_{i}" if i else inputdir for i in [None, 5, 10, 100]]
-    floname = os.path.join(flodirs[0], flosubdirs[0], 'Test 03 L3 NAOCL 22000 fpstif_04900_out.flo')
-
-    # Plotting
-    out_flow = read_flow(floname)
-    flowstat = np.linalg.norm(out_flow, axis=2).flatten()
-    pt1, pt2 = [8, 120], [22, 136]
-    slice_flow = out_flow[pt1[0]:pt2[0], pt1[1]:pt2[1]]
-    slice_mag = np.hypot(slice_flow[:, :, 0], slice_flow[:, :, 1])
-    slice_mag_mean = np.mean(slice_mag)
-    # checkstat(flowstat)
-
-    # quiver_plot(out_flow, thres=0.5, show=True)
-    singleplot(floname, imdir, use_flowviz=True)
+    # Generate colormap
+    color_map(resolution=256, maxmotion=4, show=True)
 
     print("DONE!")
