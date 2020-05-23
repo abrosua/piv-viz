@@ -18,10 +18,13 @@ if __name__ == "__main__":
     netname = "Hui-LiteFlowNet"
     labelpaths = sorted(glob(os.path.join("./labels", "Test 03 L3 NAOCL 22000 fpstif", "*.json")))
 
-    # Main
-    cropper = (100, 0, 0, 0)
-    flow_visualizer = utils.FlowViz(labelpaths, file_extension=ext, show=show_figure, verbose=0)
-    flow_visualizer(netname, vector_step=5, use_quiver=True, use_color=True, crop_window=cropper)
+    # FlowViz main script
+    # cropper = (100, 0, 0, 0)
+    # flow_visualizer = utils.FlowViz(labelpaths, file_extension=ext, show=show_figure, verbose=0)
+    # flow_visualizer(netname, vector_step=5, use_quiver=True, use_color=True, crop_window=cropper)
     # utils.color_map(maxmotion=4, show=True)
+
+    # Change of air column level
+    column_level = utils.column_level(labelpaths, netname, fps=13000, show=True, verbose=1)
 
     print("DONE!")
