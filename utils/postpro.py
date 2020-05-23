@@ -107,9 +107,41 @@ def checkstat(data):
     plt.show()
 
 
-def column_diff():
-    #TODO: Create a function to acquire the column points label, and plot the change in points. Returning as an Array!
-    pass
+def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool = False, verbose: int = 0) -> np.array:
+    """
+    Gathering a series of air column coordinates, to plot the change in air column level.
+    params:
+        labelpaths: List of path for Label files.
+        netname: Name of the network.
+        fps: The video frame frequency (frame/second)
+        verbose: Verbosal option value.
+    Returns an array of the change in air column level.
+    """
+    column = []
+    flowdir = ""
+
+    for labelpath in labelpaths:
+        flowdir = os.path.basename(os.path.dirname(labelpath))
+        idx = int(str(os.path.splitext(labelpath)[0].rsplit("_", 1)[1]))
+        time_frame = idx/fps
+
+        label = Label(labelpath, netname, verbose=verbose)
+        column_tmp = label.get_column()
+
+        if column_tmp is None:
+            continue
+        column.append([time_frame, column_tmp])
+    column_mat = np.array(column)
+    column_mat[:, 1] -= column_mat[0, 1]  # Each level is relative to the initial condition!
+
+    if show:
+        plt.plot(column_mat[:, 0], column_mat[:, 1])
+        plt.title(f"Column level change of {flowdir}")
+        plt.xlabel("Time stamp [s]")
+        plt.ylabel("Relative column level [pix]")
+        plt.show()
+
+    return column_mat
 
 
 if __name__ == '__main__':

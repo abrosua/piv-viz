@@ -3,7 +3,7 @@ import sys
 
 # init for post-processing
 from .plot import color_map, use_flowviz, FlowViz
-from .postpro import Label, velo_mean, checkstat
+from .postpro import Label, velo_mean, checkstat, column_level
 from .tools import getpair, file_naming, copyfile
 
 # Manage the working directory
