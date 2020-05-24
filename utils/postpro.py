@@ -40,9 +40,13 @@ class Label:
             self.img_path = os.path.join("./frames", self.img_dir, imname)
 
             for d in data['shapes']:
-                self.label[d['label']] = {'points': d['points'],
-                                          'shape_type': d['shape_type']
-                                          }
+                labelkey = d['label']
+
+                if labelkey not in self.label.keys():
+                    self.label[labelkey] = {'points': [d['points']],
+                                            'shape_type': d['shape_type']}
+                else:
+                    self.label[labelkey]['points'].append(d['points'])
 
         # Importing the Flow files
         floname = os.path.splitext(imname)[0] + "_out.flo"
@@ -71,16 +75,19 @@ class Label:
             key: The label key of the flow to obtain (e.g., 'flow', 'v1', 'v2')
             fill_with: Filling value to the masked vector.
         """
+        fill_with = np.nan if fill_with is None else fill_with
+
         if key in self.label.keys():
             flow_label = self.label[key]
-            mask = shape_to_mask(self.img_shape, flow_label['points'], shape_type=flow_label['shape_type'])
+            # Flow init.
             out_flow = utils.read_flow(self.flopath)
+            mask, mask_flow = np.full(out_flow.shape, False), np.full(out_flow.shape, fill_with)
 
             # Filling the masked flow array
-            mask_flow = np.empty(out_flow.shape)
-            mask_flow[:] = np.nan if fill_with is None else fill_with
-            mask_flow[mask] = out_flow[mask]
+            for flow_point in flow_label['points']:
+                mask += shape_to_mask(self.img_shape, flow_point, shape_type=flow_label['shape_type'])
 
+            mask_flow[mask] = out_flow[mask]
             return mask_flow, mask
         else:
             print(f"The '{key}' label is NOT found in '{self.label_path}'") if self.verbose else None
