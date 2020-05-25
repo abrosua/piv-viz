@@ -81,7 +81,7 @@ class Label:
             flow_label = self.label[key]
             # Flow init.
             out_flow = utils.read_flow(self.flopath)
-            mask, mask_flow = np.full(out_flow.shape, False), np.full(out_flow.shape, fill_with)
+            mask, mask_flow = np.full(out_flow.shape[:2], False), np.full(out_flow.shape, fill_with)
 
             # Filling the masked flow array
             for flow_point in flow_label['points']:
