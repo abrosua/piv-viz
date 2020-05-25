@@ -16,7 +16,8 @@ if __name__ == "__main__":
     ext = None  # 'png' for standard image and 'eps' for latex format; use None to disable!
     show_figure = True
     netname = "Hui-LiteFlowNet"
-    labelpaths = sorted(glob(os.path.join("./labels", "Test 03 L3 NAOCL 22000 fpstif", "*.json")))
+    flodir = "Test 03 L3 EDTA 22000 fpstif"  # Test 03 L3 NAOCL 22000 fpstif
+    labelpaths = sorted(glob(os.path.join("./labels", flodir, "*.json")))
 
     # Change of air column level (Uncomment if used)
     # column_level = utils.column_level(labelpaths, netname, fps=13000, show=True, verbose=1)
