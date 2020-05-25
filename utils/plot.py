@@ -54,13 +54,13 @@ class FlowViz:
             flow, mask = label.get_flo("flow")
             if flow is None or mask is None:  # Skipping label file that doesn't have the flow label!
                 continue
-            h, w, c = flow.shape  # Create image cropper
-            crop_window = (crop_window,) * 4 if type(crop_window) is int else crop_window
-            assert len(crop_window) == 4
+            # h, w, c = flow.shape  # Create image cropper
+            # crop_window = (crop_window,) * 4 if type(crop_window) is int else crop_window
+            # assert len(crop_window) == 4
 
             # Cropping the flow
-            flow_crop = flow[crop_window[0] : h-crop_window[1], crop_window[2] : w-crop_window[3], :]
-            mask_crop = mask[crop_window[0] : h-crop_window[1], crop_window[2] : w-crop_window[3]]
+            flow_crop = utils.array_cropper(flow, crop_window)
+            mask_crop = utils.array_cropper(mask, crop_window)
             u, v = flow_crop[:, :, 0], flow_crop[:, :, 1]
 
             flow_crop[~mask_crop] = 0.0  # Replacing NaNs with zero to convert the value into RGB
@@ -73,7 +73,7 @@ class FlowViz:
             # Image masking
             impath = label.img_path
             img = imageio.imread(impath)  # Read the raw image
-            masked_img = img[crop_window[0]: h - crop_window[1], crop_window[2]: w - crop_window[2], :]
+            masked_img = utils.array_cropper(img, crop_window)
 
             if use_color:
                 # Superpose the image and flow color visualization if use_color is activated
@@ -107,7 +107,8 @@ class FlowViz:
 
             plt.clf()
 
-    def quiver_plot(self, u, v, mask, vector_step: int = 1, vector_color: bool = False,
+    @staticmethod
+    def quiver_plot(u, v, mask, vector_step: int = 1, vector_color: bool = False,
                     **quiver_key) -> None:
         """
         Quiver plot config.
@@ -140,11 +141,88 @@ class FlowViz:
         qk = plt.quiverkey(q, **quiver_key) if quiver_key else None
 
 
-def use_flowviz(flodir, imdir, start_at: int = 0, num_images: int = -1, lossless: bool = True):
+class FlowVideo:
+    def __init__(self, flodir: str, start_at: int = 0, num_images: int = -1, lossless: bool = True,
+                 crop_window: Union[int, Tuple[int, int, int, int]] = 0):
+        """
+        Generating flow video.
+        """
+        # Obtaining the flo files and file basename
+        self.flows, self.flonames = utils.read_flow_collection(flodir, start_at=start_at, num_images=num_images,
+                                                               crop_window=crop_window)
+        fname_addition = f"-{start_at}_all" if num_images < 0 else f"-{start_at}_{num_images}"
+        name_list = os.path.normpath(flodir).split(os.sep)
+        self.imdir, self.netname = name_list[-2], name_list[-3]
+        self.fname = self.imdir + fname_addition
+
+        # Saving the video
+        self.viddir = os.path.join(os.path.dirname(flodir), "videos")
+        if not os.path.isdir(self.viddir):
+            os.makedirs(self.viddir)
+
+        self.lossless = lossless
+        self.crop_window = crop_window
+
+    def use_flowviz(self):
+        """
+        Visualization using flowviz module
+        """
+        print("Optical flow visualization using flowviz by marximus...")
+
+        # Manage the input images
+        video_list = []
+        for floname in self.flonames:
+            bname = os.path.basename(floname).rsplit('_', 1)[0]
+            video_list.append(get_image(basename=bname, imdir=self.imdir, crop_window=self.crop_window))
+        video = np.array(video_list)
+
+        # Previewing the files
+        print('Video shape: {}'.format(video.shape))
+        print('Flows shape: {}'.format(self.flows.shape))
+
+        # Define the output files
+        colors = colorflow.motion_to_color(self.flows)
+        flowanim = animate.FlowAnimation(video=video, video2=colors, vector=self.flows, vector_step=10,
+                                      video2_alpha=0.5)
+
+        if self.lossless:
+            vidpath = os.path.join(self.viddir, self.fname + ".avi")
+            flowanim.save(vidpath, codec="ffv1")
+        else:
+            vidpath = os.path.join(self.viddir, self.fname + ".mp4")
+            flowanim.save(vidpath)
+        print(f"Finish saving the video file ({vidpath})!")
+
+    def use_manual(self, labelpath: str, verbose: int = 0):
+        """
+        Visualization using in-house function
+        """
+        print("Optical flow visualization by abrosua...")
+
+        if os.path.isfile(labelpath):  # Using single label file.
+            label_main = utils.Label(labelpath, netname=self.netname, verbose=verbose)
+        elif os.path.isdir(labelpath):  # Using multiple label files.
+            label_main = None
+        else:
+            raise ValueError(f"Label path is NOT found at '{labelpath}'!")
+
+    def _grab_frame(self):
+        pass
+
+
+def get_image(basename, imdir, crop_window: Union[int, Tuple[int, int, int, int]] = 0) -> np.array:
+    imname = basename + ".tif"
+    impath = os.path.join(imdir, imname)
+    img = imageio.imread(impath)
+
+    return utils.array_cropper(img, crop_window)
+
+
+def vid_flowviz(flodir, imdir, start_at: int = 0, num_images: int = -1, lossless: bool = True):
     """
     Visualization using flowviz module
     """
-    print("Optical flow visualization using flowviz by marximus")
+    print("Optical flow visualization using flowviz by marximus...")
 
     # Obtaining the flo files and file basename
     flows, flonames = utils.read_flow_collection(flodir, start_at=start_at, num_images=num_images)
