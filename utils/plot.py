@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.cm as cm
+from matplotlib import animation
 from flowviz import colorflow, animate
 
 import utils
@@ -26,6 +27,7 @@ class FlowViz:
             show:
             verbose:
         """
+        assert len(labelpaths) > 0  # Input sanity checking
         self.labelpaths = labelpaths
         self.netname = netname
 
@@ -41,8 +43,12 @@ class FlowViz:
         self.crop_window = crop_window
 
         # Init.
-        self.img_dir = None
+        self.img_dir = ""
         self.keyname = ""
+        if self.use_color:
+            self.keyname += "c"
+        if self.use_quiver:
+            self.keyname += "q"
 
     def plot(self, file_extension: Optional[str] = None, show: bool = False):
         """
@@ -72,7 +78,62 @@ class FlowViz:
             plt.clf()
 
     def video(self, flodir: str, start_at: int = 0, num_images: int = -1, lossless: bool = True):
-        pass
+        """
+        Generating video
+        """
+        # Flow init.
+        flows, flonames = utils.read_flow_collection(flodir, start_at=start_at, num_images=num_images,
+                                                     crop_window=self.crop_window)
+        fname_addition = f"-{start_at}_all" if num_images < 0 else f"-{start_at}_{num_images}"
+        name_list = os.path.normpath(flodir).split(os.sep)
+        self.img_dir = str(name_list[-2])
+
+        # Label init.
+        if len(self.labelpaths) == 1:  # Single label mode
+            label_main = utils.Label(self.labelpaths[0], netname=self.netname, verbose=self.verbose)
+        elif len(self.labelpaths) >= len(flonames):  # Multiple labels mode
+            label_main = None
+        else:  # Raising ERROR
+            raise ValueError("Multiple labels mode is used, but the number of input labelpaths is NOT sufficient!")
+
+        # Video writer config.
+        vidname = self.img_dir + fname_addition + f"_{self.keyname}vid"
+        if lossless:
+            vidpath = os.path.join(os.path.dirname(flodir), "videos", vidname + ".avi")
+            writer = animation.FFMpegFileWriter(fps=30, bitrate=-1, codec="ffv1")
+        else:
+            vidpath = os.path.join(os.path.dirname(flodir), "videos", vidname + ".mp4")
+            writer = animation.FFMpegFileWriter(fps=30, bitrate=-1, codec="ffv1")
+
+        with writer.saving(fig, vidpath, dpi=300):  # TODO: Fix the writer! And test it later on!
+            id_flo, id_label = 0, 0
+
+            while id_flo < len(flonames):
+                floname = flonames[id_flo]
+                flonum = int(os.path.basename(floname).split("_")[-2])
+
+                if label_main is None:  # Multiple labels mode
+                    labelpath = self.labelpaths[id_label]
+                    labelnum = int(os.path.splitext(os.path.basename(labelpath))[0].rsplit("_", 1)[-1])
+                    id_label += 1
+
+                    if labelnum < flonum:
+                        continue
+                    elif labelnum > flonum:
+                        raise ValueError(f"Label file is NOT found for flow file at '{floname}'")
+                    else:
+                        label = utils.Label(labelpath, netname=self.netname, verbose=self.verbose)
+
+                    check_flow = label.get_flo("flow")
+                    if None in check_flow:  # Checking the flow label availability
+                        raise ValueError(f"Flow label is NOT found in '{labelpath}'")
+                else:  # Single label mode
+                    label = label_main
+
+                # Gathering each frame
+                id_flo += 1
+                self.draw_frame(label)
+
 
     def draw_frame(self, label):
         """
@@ -104,7 +165,6 @@ class FlowViz:
             # Superpose the image and flow color visualization if use_color is activated
             masked_img[mask_crop] = 0
             merge_img = masked_img + flo_color
-            self.keyname += 'c'
         else:
             masked_img[mask_crop] = 255
             merge_img = masked_img
@@ -114,7 +174,6 @@ class FlowViz:
         plt.imshow(merge_img)
         if self.use_quiver:
             self.quiver_plot(u, v, mask_crop, self.vector_step, vector_color=not self.use_color)
-            self.keyname += 'q'
         # Erasing the axis number
         plt.xticks([])
         plt.yticks([])
