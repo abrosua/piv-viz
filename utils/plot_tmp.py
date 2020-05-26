@@ -14,9 +14,9 @@ matplotlib.use('TkAgg')
 
 
 class FlowViz:
-    def __init__(self, labelpaths: List[str], netname: str, maxmotion: Optional[float] = None, vector_step: int = 1,
-                 use_color: bool = True, use_quiver: bool = True, calc_vorticity: bool = False,
-                 crop_window: Union[int, Tuple[int, int, int, int]] = 0, verbose: int = 0) -> None:
+    def __init__(self, labelpaths: List[str], maxmotion: Optional[float] = None,
+                 file_extension: Optional[str] = None, show: bool = False,
+                 verbose: int = 0) -> None:
         """
         Flow visualization instance
         params:
@@ -27,97 +27,10 @@ class FlowViz:
             verbose:
         """
         self.labelpaths = labelpaths
-        self.netname = netname
-
-        # Logic gate
-        self.use_color = use_color
-        self.use_quiver = use_quiver
-        self.vorticity = calc_vorticity
-        self.verbose = verbose
-
-        # Variables
         self.maxmotion = maxmotion
-        self.vector_step = vector_step
-        self.crop_window = crop_window
-
-        # Init.
-        self.img_dir = None
-        self.keyname = ""
-
-    def plot(self, file_extension: Optional[str] = None, show: bool = False):
-        """
-        Plotting
-        """
-        for labelpath in self.labelpaths:
-            label = utils.Label(labelpath, self.netname, verbose=self.verbose)
-            bname = os.path.splitext(os.path.basename(labelpath))[0]
-
-            check_flow = label.get_flo("flow")
-            if None in check_flow:
-                continue
-            else:
-                self.draw_frame(label)
-
-            if show:
-                plt.show()
-
-            if file_extension:
-                # Setting up the path name
-                plotdir = os.path.join("./results", self.netname, self.img_dir, "viz")
-                os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
-                # Saving the plot
-                plotpath = os.path.join(plotdir, bname + f"_{self.keyname}viz.{file_extension}")
-                plt.savefig(plotpath, dpi=300, bbox_inches='tight')
-
-            plt.clf()
-
-    def video(self, flodir: str, start_at: int = 0, num_images: int = -1, lossless: bool = True):
-        pass
-
-    def draw_frame(self, label):
-        """
-        Drawing each single frame.
-        """
-        # Add flow field
-        flow, mask = label.get_flo("flow")
-        if flow is None or mask is None:  # Skipping label file that doesn't have the flow label!
-            return None
-
-        # Cropping the flow
-        flow_crop = utils.array_cropper(flow, self.crop_window)
-        mask_crop = utils.array_cropper(mask, self.crop_window)
-        u, v = flow_crop[:, :, 0], flow_crop[:, :, 1]
-
-        flow_crop[~mask_crop] = 0.0  # Replacing NaNs with zero to convert the value into RGB
-        if self.vorticity:
-            flo_color = None  # TODO create vorticity calculation function!
-        else:
-            flo_color = colorflow.motion_to_color(flow_crop, maxmotion=self.maxmotion)
-        flo_color[~mask_crop] = 0  # Merging image and plot the result
-
-        # Image masking
-        impath = label.img_path
-        img = imageio.imread(impath)  # Read the raw image
-        masked_img = utils.array_cropper(img, self.crop_window)
-
-        if self.use_color:
-            # Superpose the image and flow color visualization if use_color is activated
-            masked_img[mask_crop] = 0
-            merge_img = masked_img + flo_color
-            self.keyname += 'c'
-        else:
-            masked_img[mask_crop] = 255
-            merge_img = masked_img
-
-        # Viz
-        plt.figure()
-        plt.imshow(merge_img)
-        if self.use_quiver:
-            self.quiver_plot(u, v, mask_crop, self.vector_step, vector_color=not self.use_color)
-            self.keyname += 'q'
-        # Erasing the axis number
-        plt.xticks([])
-        plt.yticks([])
+        self.file_extension = file_extension
+        self.show = show
+        self.verbose = verbose
 
     def __call__(self, netname: str, vector_step: int = 1, use_color: bool = True, use_quiver: bool = True,
                  vorticity: bool = False, crop_window: Union[int, Tuple[int, int, int, int]] = 0,
