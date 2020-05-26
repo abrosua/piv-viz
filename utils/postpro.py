@@ -98,7 +98,6 @@ def velo_mean(flo: np.array, mask: Optional[np.array] = None):
     if mask is None:
         flo_mag = np.linalg.norm(flo, axis=-1)
         flo_mag_clean = flo_mag[~np.isnan(flo_mag)]
-
     else:
         flo_clean = flo[mask]
         flo_mag_clean = np.linalg.norm(flo_clean, axis=-1)
@@ -112,6 +111,23 @@ def checkstat(data):
                  hist_kws={'edgecolor': 'black'},
                  kde_kws={'linewidth': 4})
     plt.show()
+
+
+def region_velo(labelpaths: List[str], netname: str, flodir: str, start_at: int = 0, end_at: int = -1,
+                num_images: int = -1, avg_step: int = 1):
+    """
+    Get regional velocity data (either v1 or v2).
+    params:
+        labelpaths:
+    """
+    # Flow metadata
+    nflow = len(glob(os.path.join(flodir, ".flo")))
+    end_at = nflow if end_at < 0 else end_at
+    num_images = nflow if num_images < 0 else num_images
+
+    step = int(np.floor(end_at/num_images))
+    idx = list(range(start_at, end_at, step))
+    pass
 
 
 def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool = False, verbose: int = 0) -> np.array:
