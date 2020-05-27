@@ -113,21 +113,54 @@ def checkstat(data):
     plt.show()
 
 
-def region_velo(labelpaths: List[str], netname: str, flodir: str, start_at: int = 0, end_at: int = -1,
-                num_images: int = -1, avg_step: int = 1):
+def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 1, start_at: int = 0, end_at: int = -1,
+                num_flows: int = -1, avg_step: int = 1, verbose: int = 0) -> np.array:
     """
     Get regional velocity data (either v1 or v2).
     params:
-        labelpaths:
+        labelpath: The base label file to use.
+        netname: Network name result to use.
+        flodir: Main directory of the flow.
+        key: Which regional flow to choose (v1 or v2).
+        fps: Image frame frequency (Frame Per Second).
+        start_at: Flow index to start.
+        end_at: Last flow index (if -1, use the last flow in the flowdir).
+        num_flows: Number of flows to choose (if -1, use all the available flows in the flowdir).
+        avg_step: Number of steps to average the flow value (if 1, calculate instantaneous velocity instead).
+        verbose: The verbosal option
+    returns:
+        numpy array of the regional velocity summary at each time frame,
+        in terms of average 2d velocity and magnitude.
     """
     # Flow metadata
-    nflow = len(glob(os.path.join(flodir, ".flo")))
+    flopaths = sorted(glob(os.path.join(flodir, ".flo")))
+    nflow = len(flopaths)
     end_at = nflow if end_at < 0 else end_at
-    num_images = nflow if num_images < 0 else num_images
+    num_flows = nflow if num_flows < 0 else num_flows
 
-    step = int(np.floor(end_at/num_images))
+    step = int(np.floor(end_at / num_flows))
     idx = list(range(start_at, end_at, step))
-    pass
+
+    # Getting the v1/v2 label
+    label = Label(labelpath, netname, verbose=verbose)
+    flow_label = label.label[key]
+
+    # Iterate over the flows
+    velo_record = []
+
+    for id in idx:
+        flopath = flopaths[id : id+avg_step]
+        out_flow = utils.read_flow_collection(flopath)
+        out_mag = np.linalg.norm(out_flow, axis=-1)
+        avg_flow, avg_mag = np.mean(out_flow), np.mean(out_mag)
+        mask = np.full(avg_flow.shape[:2], False)
+
+        # Filling the masked flow array
+        for flow_point in flow_label['points']:
+            mask += shape_to_mask(avg_flow.shape[:2], flow_point, shape_type=flow_label['shape_type'])
+
+        velo_record.append([id/fps, np.mean(avg_flow[mask], axis=0), np.mean(avg_mag[mask], axis=0)])
+    return np.array(velo_record)
 
 
 def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool = False, verbose: int = 0) -> np.array:
