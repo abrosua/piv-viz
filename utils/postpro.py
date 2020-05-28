@@ -6,6 +6,7 @@ from typing import Optional, List, Tuple
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from labelme.utils import shape_to_mask
 
 import utils
@@ -132,11 +133,15 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
         numpy array of the regional velocity summary at each time frame,
         in terms of average 2d velocity and magnitude.
     """
+    # Init.
+    assert os.path.isfile(labelpath)
+    assert os.path.isdir(flodir)
+
     # Flow metadata
-    flopaths = sorted(glob(os.path.join(flodir, ".flo")))
+    flopaths = sorted(glob(os.path.join(flodir, "*.flo")))
     nflow = len(flopaths)
     end_at = nflow if end_at < 0 else end_at
-    num_flows = nflow if num_flows < 0 else num_flows
+    num_flows = nflow - start_at if num_flows < 0 else num_flows
 
     step = int(np.floor(end_at / num_flows))
     idx = list(range(start_at, end_at, step))
@@ -146,20 +151,19 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
     flow_label = label.label[key]
 
     # Iterate over the flows
-    velo_record = []
+    velo_record = [[0.0, [0.0, 0.0], 0.0]]
 
-    for id in idx:
-        flopath = flopaths[id : id+avg_step]
-        out_flow = utils.read_flow_collection(flopath)
+    for id in tqdm(idx, desc=f"Flow at {key}", unit="frame"):
+        out_flow, _ = utils.read_flow_collection(flodir, start_at=id, num_images=avg_step)
         out_mag = np.linalg.norm(out_flow, axis=-1)
-        avg_flow, avg_mag = np.mean(out_flow), np.mean(out_mag)
+        avg_flow, avg_mag = np.mean(out_flow, axis=0), np.mean(out_mag, axis=0)
         mask = np.full(avg_flow.shape[:2], False)
 
         # Filling the masked flow array
         for flow_point in flow_label['points']:
             mask += shape_to_mask(avg_flow.shape[:2], flow_point, shape_type=flow_label['shape_type'])
 
-        velo_record.append([id/fps, np.mean(avg_flow[mask], axis=0), np.mean(avg_mag[mask], axis=0)])
+        velo_record.append([(id+1)/fps, np.mean(avg_flow[mask], axis=0), np.mean(avg_mag[mask], axis=0)])
     return np.array(velo_record)
 
 
@@ -200,11 +204,60 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool =
     return column_mat
 
 
+def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0, end_at: int = -1,
+                 verbose: int = 0) -> float:
+    """
+    Get maximum flow magnitude within the flow direction.
+    params:
+        flodir: Flow directory.
+        labelpath: Label file input to mask the flow, optional.
+        start_at: Starting index.
+        end_at: Ending index.
+    Returns the maximum flow magnitude.
+    """
+    # Init.
+    assert os.path.isdir(flodir)
+    name_list = os.path.normpath(flodir).split(os.sep)
+    floname, netname = name_list[-2], name_list[-3]
+
+    if labelpath is not None:
+        assert os.path.isfile(labelpath)
+        mask_label = Label(labelpath, netname, verbose=verbose).label["video"]
+    else:
+        mask_label = None
+
+
+    flopaths_raw = sorted(glob(os.path.join(flodir, "*.flo")))
+    end_at = len(flopaths_raw) if end_at < 0 else end_at
+    flopaths = flopaths_raw[start_at:end_at]
+
+    # Iterate over the flopaths
+    max_flo = 0.0
+
+    for flopath in tqdm(flopaths, desc=f"Max flow at {floname}", unit="frame"):
+        flow = utils.read_flow(flopath)
+        if mask_label is not None:
+            mask = shape_to_mask(flow.shape[:2], mask_label["points"][0], shape_type=mask_label['shape_type'])
+            flow = flow[mask]
+
+        max_mag_flo = np.max(np.linalg.norm(flow, axis=-1))
+        max_flo = max_mag_flo if max_mag_flo > max_flo else max_flo
+
+    if verbose:
+        tqdm.write(f"Maximum flow at {floname} (from {start_at} to {end_at}) is {max_flo:.2f}")
+    return max_flo
+
+
 if __name__ == '__main__':
+    flodir = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/flow"
+    imdir = "./frames/Test 03 L3 NAOCL 22000 fpstif"
+
     # <------------ Use flowviz (uncomment for usage) ------------>
-    # flodir = "./results/Hui-LiteFlowNet/Test 03 L3 EDTA 22000 fpstif/flow"
-    # imdir = "./frames/Test 03 L3 EDTA 22000 fpstif"
     # use_flowviz(flodir, imdir, start_at=4900, num_images=50, lossless=False)
+
+    # <------------ Use get_max_flow (uncomment for usage) ------------>
+    labelpath = "./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_13124.json"
+    max_flow = get_max_flow(flodir, labelpath, verbose=1)
 
     # <------------ Use get_label (uncomment for usage) ------------>
     netname = "Hui-LiteFlowNet"
