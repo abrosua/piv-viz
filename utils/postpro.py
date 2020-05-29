@@ -62,9 +62,9 @@ class Label:
         Returning the lowest point of the air column occurrence.
         """
         if 'column' in self.label.keys():
-            points = np.array(self.label['column']['points'])
+            points = np.array(self.label['column']['points'][0])
             y_points = points[:, 1]
-            return y_points.min()
+            return -y_points.min()
         else:
             print(f"The Air Column label is NOT found in '{self.label_path}'") if self.verbose else None
             return None
@@ -115,7 +115,8 @@ def checkstat(data):
 
 
 def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 1, start_at: int = 0, end_at: int = -1,
-                num_flows: int = -1, avg_step: int = 1, verbose: int = 0) -> np.array:
+                num_flows: int = -1, avg_step: int = 1, show: bool = False, filename: Optional[str] = None,
+                verbose: int = 0) -> np.array:
     """
     Get regional velocity data (either v1 or v2).
     params:
@@ -136,6 +137,7 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
     # Init.
     assert os.path.isfile(labelpath)
     assert os.path.isdir(flodir)
+    assert avg_step > 0
 
     # Flow metadata
     flopaths = sorted(glob(os.path.join(flodir, "*.flo")))
@@ -145,6 +147,7 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
 
     step = int(np.floor(end_at / num_flows))
     idx = list(range(start_at, end_at, step))
+    key_title = "instantaneous" if avg_step == 1 else "mean"
 
     # Getting the v1/v2 label
     label = Label(labelpath, netname, verbose=verbose)
@@ -164,10 +167,24 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
             mask += shape_to_mask(avg_flow.shape[:2], flow_point, shape_type=flow_label['shape_type'])
 
         velo_record.append([(id+1)/fps, np.mean(avg_flow[mask], axis=0), np.mean(avg_mag[mask], axis=0)])
-    return np.array(velo_record)
+    velo_record = np.array(velo_record)
+
+    plt.plot(velo_record[:, 0], velo_record[:, -1])
+    plt.title(f"{key} {key_title} velocity at each time frame")
+    plt.ylim(bottom=0)
+    plt.xlim(left=0)
+    plt.xlabel("Time stamp [s]")
+    plt.ylabel(f"{key} velocity [pix]")
+
+    plt.show() if show else None
+    plt.savefig(filename, dpi=300, bbox_inches='tight') if filename else None
+    plt.clf()
+
+    return velo_record
 
 
-def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool = False, verbose: int = 0) -> np.array:
+def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool = False,
+                 filename: Optional[str] = None, verbose: int = 0) -> Tuple[np.array, List[str]]:
     """
     Gathering a series of air column coordinates, to plot the change in air column level.
     params:
@@ -177,13 +194,13 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool =
         verbose: Verbosal option value.
     Returns an array of the change in air column level.
     """
-    column = []
+    column, img_paths = [], []
     flowdir = ""
 
     for labelpath in labelpaths:
         flowdir = os.path.basename(os.path.dirname(labelpath))
         idx = int(str(os.path.splitext(labelpath)[0].rsplit("_", 1)[1]))
-        time_frame = idx/fps
+        time_frame = (idx+1)/fps
 
         label = Label(labelpath, netname, verbose=verbose)
         column_tmp = label.get_column()
@@ -191,17 +208,23 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool =
         if column_tmp is None:
             continue
         column.append([time_frame, column_tmp])
+        img_paths.append(label.img_path)
+
     column_mat = np.array(column)
     column_mat[:, 1] -= column_mat[0, 1]  # Each level is relative to the initial condition!
 
-    if show:
-        plt.plot(column_mat[:, 0], column_mat[:, 1])
-        plt.title(f"Column level change of {flowdir}")
-        plt.xlabel("Time stamp [s]")
-        plt.ylabel("Relative column level [pix]")
-        plt.show()
+    plt.plot(column_mat[:, 0], column_mat[:, 1])
+    plt.title(f"Column level change of {flowdir}")
+    # plt.ylim(bottom=0)
+    plt.xlim(left=0)
+    plt.xlabel("Time stamp [s]")
+    plt.ylabel("Relative column level [pix]")
 
-    return column_mat
+    plt.show() if show else None
+    plt.savefig(filename, dpi=300, bbox_inches='tight') if filename else None
+    plt.clf()
+
+    return column_mat, img_paths
 
 
 def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0, end_at: int = -1,

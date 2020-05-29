@@ -24,7 +24,7 @@ if __name__ == "__main__":
     utils.color_map(maxmotion=max_velo_mag, show=True)
 
     # <------------ Change of air column level (Uncomment if used) ------------>
-    # column_level = utils.column_level(labelpaths, netname, fps=13000, show=True, verbose=1)
+    # column_level, _ = utils.column_level(labelpaths, netname, fps=13000, show=True, verbose=1)
 
     # <------------ Get regional velocity (uncomment for usage) ------------>
     labelpath = os.path.join("./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_04900.json")

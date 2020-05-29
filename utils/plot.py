@@ -1,5 +1,6 @@
 import os
 import imageio
+import math
 from typing import Optional, List, Union, Tuple
 
 import numpy as np
@@ -52,7 +53,7 @@ class FlowViz:
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(1, 1, 1)
 
-    def plot(self, file_extension: Optional[str] = None, show: bool = False):
+    def plot(self, file_extension: Optional[str] = None, show: bool = False, savedir: Optional[str] = None):
         """
         Plotting
         """
@@ -61,7 +62,7 @@ class FlowViz:
             bname = os.path.splitext(os.path.basename(labelpath))[0]
 
             check_flow = label.get_flo("flow")
-            if None in check_flow:
+            if check_flow[0] is None or check_flow[1] is None:
                 continue
             else:
                 self.draw_frame(label)
@@ -71,7 +72,7 @@ class FlowViz:
 
             if file_extension:
                 # Setting up the path name
-                plotdir = os.path.join("./results", self.netname, self.img_dir, "viz")
+                plotdir = os.path.join("./results", self.netname, self.img_dir, "viz") if savedir is None else savedir
                 os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
                 # Saving the plot
                 plotpath = os.path.join(plotdir, bname + f"_{self.keyname}viz.{file_extension}")
@@ -177,8 +178,8 @@ class FlowViz:
         if self.use_quiver:
             self.quiver_plot(self.ax, u, v, mask_crop, self.vector_step, vector_color=not self.use_color)
         # Erasing the axis number
-        self.ax.xticks([])
-        self.ax.yticks([])
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
 
     @staticmethod
     def quiver_plot(ax, u, v, mask, vector_step: int = 1, vector_color: bool = False,
@@ -208,7 +209,7 @@ class FlowViz:
                           units='xy', width=width_factor*w)
             ax.colorbar()
         else:
-            q = ax.quiver(X, Y, U, V,
+            q = ax.quiver(X, Y, U, -V,
                           units='xy', width=width_factor*w)
 
         qk = ax.quiverkey(q, **quiver_key) if quiver_key else None
@@ -276,6 +277,9 @@ def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False,
         show: Option to display the plot or not.
         filename: Full file path to save the plot; use None for not saving the plot!
     """
+    # Init.
+    bname = os.path.basename(filename).rsplit("_", 1)[0]
+
     # Color plot
     pts = np.linspace(-maxmotion, maxmotion, num=resolution)
     x, y = np.meshgrid(pts, pts)
@@ -285,7 +289,9 @@ def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False,
     # Plotting the image
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
-    ax.imshow(flo_color, extent=[-maxmotion, maxmotion, -maxmotion, maxmotion])
+    ax.imshow(flo_color, extent=[-math.ceil(maxmotion), math.ceil(maxmotion),
+                                 -math.ceil(maxmotion), math.ceil(maxmotion)])
+    ax.set_title(f"{bname} Colormap")
 
     # Erasing the zeros
     func = lambda x, pos: "" if np.isclose(x, 0) else x
