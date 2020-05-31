@@ -17,7 +17,7 @@ matplotlib.use('TkAgg')
 
 class FlowViz:
     def __init__(self, labelpaths: List[str], netname: str, maxmotion: Optional[float] = None, vector_step: int = 1,
-                 use_color: bool = True, use_quiver: bool = True, calc_vorticity: bool = False,
+                 use_color: bool = False, use_quiver: bool = False, calc_vorticity: bool = False, key: str = "flow",
                  crop_window: Union[int, Tuple[int, int, int, int]] = 0, verbose: int = 0) -> None:
         """
         Flow visualization instance
@@ -42,6 +42,7 @@ class FlowViz:
         self.maxmotion = maxmotion
         self.vector_step = vector_step
         self.crop_window = crop_window
+        self.key = key
 
         # Init.
         self.img_dir = ""
@@ -61,7 +62,7 @@ class FlowViz:
             label = utils.Label(labelpath, self.netname, verbose=self.verbose)
             bname = os.path.splitext(os.path.basename(labelpath))[0]
 
-            check_flow = label.get_flo("flow")
+            check_flow = label.get_flo(self.key)
             if check_flow[0] is None or check_flow[1] is None:
                 continue
             else:
@@ -128,7 +129,7 @@ class FlowViz:
                     else:
                         label = utils.Label(labelpath, netname=self.netname, verbose=self.verbose)
 
-                    check_flow = label.get_flo("flow")
+                    check_flow = label.get_flo(self.key)
                     if None in check_flow:  # Checking the flow label availability
                         raise ValueError(f"Flow label is NOT found in '{labelpath}'")
                 else:  # Single label mode
@@ -144,7 +145,7 @@ class FlowViz:
         Drawing each single frame.
         """
         # Add flow field
-        flow, mask = label.get_flo("flow")
+        flow, mask = label.get_flo(self.key)
         if flow is None or mask is None:  # Skipping label file that doesn't have the flow label!
             return None
 

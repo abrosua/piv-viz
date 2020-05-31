@@ -173,7 +173,7 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
     plt.title(f"{key} {key_title} velocity at each time frame")
     plt.ylim(bottom=0)
     plt.xlim(left=0)
-    plt.xlabel("Time stamp [s]")
+    plt.xlabel("Time stamp [frame]")
     plt.ylabel(f"{key} velocity [pix]")
 
     plt.show() if show else None
@@ -184,7 +184,7 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
 
 
 def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool = False,
-                 filename: Optional[str] = None, verbose: int = 0) -> Tuple[np.array, List[str]]:
+                 filename: Optional[str] = None, verbose: int = 0) -> Tuple[np.array, List[str], float]:
     """
     Gathering a series of air column coordinates, to plot the change in air column level.
     params:
@@ -211,20 +211,21 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool =
         img_paths.append(label.img_path)
 
     column_mat = np.array(column)
-    column_mat[:, 1] -= column_mat[0, 1]  # Each level is relative to the initial condition!
+    init_point = column_mat[0, 1]
+    column_mat[:, 1] -= init_point  # Each level is relative to the initial condition!
 
     plt.plot(column_mat[:, 0], column_mat[:, 1])
     plt.title(f"Column level change of {flowdir}")
     # plt.ylim(bottom=0)
     plt.xlim(left=0)
-    plt.xlabel("Time stamp [s]")
+    plt.xlabel("Time stamp [frame]")
     plt.ylabel("Relative column level [pix]")
 
     plt.show() if show else None
     plt.savefig(filename, dpi=300, bbox_inches='tight') if filename else None
     plt.clf()
 
-    return column_mat, img_paths
+    return column_mat, img_paths, -init_point
 
 
 def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0, end_at: int = -1,
