@@ -116,7 +116,7 @@ def checkstat(data):
 
 def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 1, start_at: int = 0, end_at: int = -1,
                 num_flows: int = -1, avg_step: int = 1, show: bool = False, filename: Optional[str] = None,
-                verbose: int = 0) -> np.array:
+                calibration_factor: float = 1.0, verbose: int = 0) -> np.array:
     """
     Get regional velocity data (either v1 or v2).
     params:
@@ -129,10 +129,11 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
         end_at: Last flow index (if -1, use the last flow in the flowdir).
         num_flows: Number of flows to choose (if -1, use all the available flows in the flowdir).
         avg_step: Number of steps to average the flow value (if 1, calculate instantaneous velocity instead).
+        calibration_factor: To calibrate pixel to (estimated) real displacement.
         verbose: The verbosal option
     returns:
-        numpy array of the regional velocity summary at each time frame,
-        in terms of average 2d velocity and magnitude.
+        numpy array of the regional velocity summary at each time frame, in terms of average 2d velocity and magnitude.
+        The flow regional velocity is in mm/second.
     """
     # Init.
     assert os.path.isfile(labelpath)
@@ -158,6 +159,8 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
 
     for id in tqdm(idx, desc=f"Flow at {key}", unit="frame"):
         out_flow, _ = utils.read_flow_collection(flodir, start_at=id, num_images=avg_step)
+        out_flow = out_flow * fps * calibration_factor  # Calibrating into mm/second
+
         out_mag = np.linalg.norm(out_flow, axis=-1)
         avg_flow, avg_mag = np.mean(out_flow, axis=0), np.mean(out_mag, axis=0)
         mask = np.full(avg_flow.shape[:2], False)
