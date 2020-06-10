@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.cm as cm
 from matplotlib import animation
+from matplotlib import colors
+from PIL import Image
 from flowviz import colorflow, animate
 
 import utils
@@ -17,8 +19,9 @@ matplotlib.use('TkAgg')
 
 class FlowViz:
     def __init__(self, labelpaths: List[str], netname: str, maxmotion: Optional[float] = None, vector_step: int = 1,
-                 use_color: bool = False, use_quiver: bool = False, calc_vorticity: bool = False, key: str = "flow",
-                 crop_window: Union[int, Tuple[int, int, int, int]] = 0, verbose: int = 0) -> None:
+                 use_color: int = 0, use_quiver: bool = False, color_type: Optional[str] = None, key: str = "flow",
+                 crop_window: Union[int, Tuple[int, int, int, int]] = 0, velocity_factor: float = 1.0,
+                 verbose: int = 0) -> None:
         """
         Flow visualization instance
         params:
@@ -28,33 +31,51 @@ class FlowViz:
             show:
             verbose:
         """
-        assert len(labelpaths) > 0  # Input sanity checking
+        # Input sanity checking
+        assert len(labelpaths) > 0
+        if color_type is not None:
+            assert color_type in ["vort", "mag"]
+
         self.labelpaths = labelpaths
         self.netname = netname
 
         # Logic gate
         self.use_color = use_color
         self.use_quiver = use_quiver
-        self.vorticity = calc_vorticity
+        self.color_type = color_type
         self.verbose = verbose
 
         # Variables
-        self.maxmotion = maxmotion
+        self.maxmotion = maxmotion * velocity_factor
         self.vector_step = vector_step
         self.crop_window = crop_window
+        self.velocity_factor = velocity_factor
         self.key = key
 
         # Init.
-        self.img_dir = ""
-        self.keyname = ""
-        if self.use_color:
-            self.keyname += "c"
-        if self.use_quiver:
-            self.keyname += "q"
+        self.img_dir, self.keyname = "", ""
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(1, 1, 1)
+        self.ax.set_xticks([])  # Erasing the axis number
+        self.ax.set_yticks([])
+        self.im1, self.quiver = None, None
 
-    def plot(self, file_extension: Optional[str] = None, show: bool = False, savedir: Optional[str] = None):
+        # Scalar mapping
+        self.norm = colors.Normalize(vmin=0, vmax=maxmotion)
+        self.scalar_map = cm.ScalarMappable(norm=self.norm, cmap=cm.hot_r)
+        if (use_quiver and not use_color) or color_type == "mag":
+            self.fig.colorbar(self.scalar_map)
+
+        if self.use_color == 1:
+            self.keyname += "c"
+        elif self.use_color == 2:
+            self.keyname += "t"
+            self.im2 = None
+        if self.use_quiver:
+            self.keyname += "q"
+
+    def plot(self, file_extension: Optional[str] = None, show: bool = False, savedir: Optional[str] = None,
+             **quiver_key) -> None:
         """
         Plotting
         """
@@ -62,11 +83,21 @@ class FlowViz:
             label = utils.Label(labelpath, self.netname, verbose=self.verbose)
             bname = os.path.splitext(os.path.basename(labelpath))[0]
 
-            check_flow = label.get_flo(self.key)
-            if check_flow[0] is None or check_flow[1] is None:
+            # Add flow field
+            flow, mask = label.get_flo(self.key)
+            if flow is None or mask is None:  # Skipping label file that doesn't have the flow label!
                 continue
             else:
-                self.draw_frame(label)
+                flow = flow * self.velocity_factor
+
+            # Reading flow and image files
+            flow_crop = utils.array_cropper(flow, self.crop_window)
+            mask_crop = utils.array_cropper(mask, self.crop_window)
+            img = imageio.imread(label.img_path)  # Read the raw image
+            img_crop = utils.array_cropper(img, self.crop_window)
+
+            self._init_frame(img_crop, **quiver_key)  # Initialize the frame
+            self._draw_frame(flow_crop, img_crop, mask_crop)  # Drawing each frame
 
             if show:
                 plt.show()
@@ -81,139 +112,159 @@ class FlowViz:
 
             plt.clf()
 
-    def video(self, flodir: str, start_at: int = 0, num_images: int = -1,
-              fps: int = 30, dpi: int = 300, lossless: bool = True):
+    def video(self, flodir: str, ext: Optional[str] = None, start_at: int = 0, num_images: int = -1,
+              fps: int = 1, dpi: int = 300, lossless: bool = True):
         """
         Generating video
         """
         # Flow init.
         flows, flonames = utils.read_flow_collection(flodir, start_at=start_at, num_images=num_images,
                                                      crop_window=self.crop_window)
-        fname_addition = f"-{start_at}_all" if num_images < 0 else f"-{start_at}_{num_images}"
-        name_list = os.path.normpath(flodir).split(os.sep)
-        self.img_dir = str(name_list[-2])
+        flows = flows * self.velocity_factor
 
-        # Label init.
-        if len(self.labelpaths) == 1:  # Single label mode
-            label_main = utils.Label(self.labelpaths[0], netname=self.netname, verbose=self.verbose)
-        elif len(self.labelpaths) >= len(flonames):  # Multiple labels mode
-            label_main = None
-        else:  # Raising ERROR
-            raise ValueError("Multiple labels mode is used, but the number of input labelpaths is NOT sufficient!")
+        fname_addition = f"-{start_at}_end" if num_images < 0 else f"-{start_at}_{num_images}"
+        self.img_dir = str(os.path.normpath(flodir).split(os.sep)[-2])
+        imgdir = os.path.join("./frames", self.img_dir)
 
-        # Video writer config.
+        # Frame looping init.
+        labelpaths, imagepaths = [], []
+
+        for i, floname in enumerate(flonames):
+            bname = os.path.basename(floname).rsplit("_", 1)[0]
+            imagepaths.append(os.path.join(imgdir, bname + ".tif"))
+
+            if len(self.labelpaths) == 1:
+                labelpath = self.labelpaths[0]
+                labelpaths.append(labelpath)
+
+            elif len(self.labelpaths) > 1:
+                labeldir = os.path.dirname(self.labelpaths[0])
+                labelpath = os.path.join(labeldir, bname + ".json")
+                assert labelpath in self.labelpaths
+
+            else:
+                raise ValueError(f"Unknown labelpaths input! '{self.labelpaths}'")
+
+            assert os.path.isfile(labelpath)
+
+        # Initialize frame
+        img_tmp = utils.array_cropper(imageio.imread(imagepaths[0]), self.crop_window)
+        self._init_frame(img_tmp)
+
+        # Generate animation writer
+        flowviz_anim = animation.FuncAnimation(self.fig, self._capture_frame, fargs=(labelpaths, imagepaths, flows),
+                                               interval=1000/fps, frames=num_images)
         vidname = self.img_dir + fname_addition + f"_{self.keyname}vid"
-        if lossless:
-            vidpath = os.path.join(os.path.dirname(flodir), "videos", vidname + ".avi")
-            writer = animation.FFMpegFileWriter(fps=fps, bitrate=-1, codec="ffv1")
+
+        if ext is not None:
+            vidpath = os.path.join(os.path.dirname(flodir), "videos", vidname + f".{ext}")
+            writer = animation.writers['ffmpeg'](fps=fps, metadata=dict(artist="Faber"), bitrate=-1)
+            flowviz_anim.save(vidpath, writer=writer, dpi=dpi)
+
+    def _capture_frame(self, idx, labelpaths: List[str], imagepaths: List[str], flows: np.array):
+        """
+        Iteration function for capturing vidoe frame.
+        """
+        labelpath = labelpaths[idx]
+        imagepath = imagepaths[idx]
+
+        # Instantiate the Label
+        label = utils.Label(labelpath, netname=self.netname, verbose=self.verbose)
+        _, mask = label.get_flo(self.key)
+
+        # Gathering each frame
+        img_crop = utils.array_cropper(imageio.imread(imagepath), self.crop_window)
+        mask_crop = utils.array_cropper(mask, self.crop_window)
+
+        self._draw_frame(flows[idx, :, :, :], img_crop, mask_crop)
+
+    def _init_frame(self, image: np.array, **quiver_key):
+        """
+        Initializing frame for video writer.
+        """
+        h, w, _ = image.shape
+
+        # Image init.
+        self.im1 = self.ax.imshow(np.zeros_like(image))
+        if self.use_color == 2:
+            self.im2 = self.ax.imshow(np.zeros([h, w, 4], dtype=image.dtype))
+
+        # Quiver init.
+        x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+        xp, yp = x[::self.vector_step, ::self.vector_step], y[::self.vector_step, ::self.vector_step]
+        mag = np.hypot(xp, yp)
+        width_factor = 0.004
+
+        if not self.use_color:
+            # Setting the vector color
+            colormap = self.scalar_map.get_cmap()
+            self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(mag),
+                                         cmap=colormap, units='xy', width=width_factor*w, scale=width_factor*100)
         else:
-            vidpath = os.path.join(os.path.dirname(flodir), "videos", vidname + ".mp4")
-            writer = animation.FFMpegFileWriter(fps=fps, bitrate=-1)
+            self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp),
+                                         units='xy', width=width_factor*w, scale=width_factor*100)
 
-        with writer.saving(self.fig, vidpath, dpi=dpi):  # TODO: Fix the writer! And test it later on!
-            id_flo, id_label = 0, 0
+        qk = self.ax.quiverkey(self.quiver, **quiver_key) if quiver_key else None
 
-            while id_flo < len(flonames):
-                floname = flonames[id_flo]
-                flonum = int(os.path.basename(floname).split("_")[-2])
-
-                if label_main is None:  # Multiple labels mode
-                    labelpath = self.labelpaths[id_label]
-                    labelnum = int(os.path.splitext(os.path.basename(labelpath))[0].rsplit("_", 1)[-1])
-                    id_label += 1
-
-                    if labelnum < flonum:
-                        continue
-                    elif labelnum > flonum:
-                        raise ValueError(f"Label file is NOT found for flow file at '{floname}'")
-                    else:
-                        label = utils.Label(labelpath, netname=self.netname, verbose=self.verbose)
-
-                    check_flow = label.get_flo(self.key)
-                    if None in check_flow:  # Checking the flow label availability
-                        raise ValueError(f"Flow label is NOT found in '{labelpath}'")
-                else:  # Single label mode
-                    label = label_main
-
-                # Gathering each frame
-                id_flo += 1
-                self.draw_frame(label)
-                writer.grab_frame(bbox_inches='tight')
-
-    def draw_frame(self, label):
+    def _draw_frame(self, flow: np.array, image: np.array, mask: np.array):
         """
         Drawing each single frame.
         """
-        # Add flow field
-        flow, mask = label.get_flo(self.key)
-        if flow is None or mask is None:  # Skipping label file that doesn't have the flow label!
-            return None
-
-        # Cropping the flow
-        flow_crop = utils.array_cropper(flow, self.crop_window)
-        mask_crop = utils.array_cropper(mask, self.crop_window)
-        u, v = flow_crop[:, :, 0], flow_crop[:, :, 1]
-
-        flow_crop[~mask_crop] = 0.0  # Replacing NaNs with zero to convert the value into RGB
-        if self.vorticity:
-            flo_color = None  # TODO create vorticity calculation function!
-        else:
-            flo_color = colorflow.motion_to_color(flow_crop, maxmotion=self.maxmotion)
-        flo_color[~mask_crop] = 0  # Merging image and plot the result
+        u, v = flow[:, :, 0], flow[:, :, 1]
 
         # Image masking
-        impath = label.img_path
-        img = imageio.imread(impath)  # Read the raw image
-        masked_img = utils.array_cropper(img, self.crop_window)
+        flow[~mask] = 0.0  # Replacing NaNs with zero to convert the value into RGB
+        mag = np.linalg.norm(flow, axis=-1)  # Calculate the flow magnitude
 
-        if self.use_color:
-            # Superpose the image and flow color visualization if use_color is activated
-            masked_img[mask_crop] = 0
-            merge_img = masked_img + flo_color
+        if self.color_type == "vort":  # TODO: create vorticity calculation function!
+            flo_rgb = None
+        elif self.color_type == "mag":  # TODO: fixing the magnitude color plot!
+            flo_rgb = np.uint8(self.scalar_map.to_rgba(mag) * 255)[:, :, :3]
         else:
-            masked_img[mask_crop] = 255
-            merge_img = masked_img
+            flo_rgb = colorflow.motion_to_color(flow, maxmotion=self.maxmotion)
 
-        # Viz
-        self.ax.imshow(merge_img)
-        if self.use_quiver:
-            self.quiver_plot(self.ax, u, v, mask_crop, self.vector_step, vector_color=not self.use_color)
-        # Erasing the axis number
-        self.ax.set_xticks([])
-        self.ax.set_yticks([])
+        # Superpose the image and flow color visualization if use_color is activated
+        if self.use_color == 1:
+            flo_rgb[~mask] = 0  # Merging image and plot the result
+            image[mask] = 0
+            self.im1.set_data(image + flo_rgb)
 
-    @staticmethod
-    def quiver_plot(ax, u, v, mask, vector_step: int = 1, vector_color: bool = False,
-                    **quiver_key) -> None:
+        elif self.use_color == 2:  # TODO: FIX the translucent color plot feature!
+            flo_rgb[~mask] = 255
+            alpha = np.uint8((mag - np.min(mag)) * 255 / (np.max(mag) - np.min(mag)))
+            flo_rgba = np.dstack([flo_rgb, alpha])
+
+            self.im1.set_data(image)
+            self.im2.set_data(flo_rgba)
+
+        else:
+            image[mask] = 255
+            self.im1.set_data(image)
+
+        # Adding quiver plot (if necessary)
+        self._q_plot(u, v, mask) if self.use_quiver else None
+
+    def _q_plot(self, u, v, mask) -> None:
         """
         Quiver plot config.
         params:
             u: Flow displacement at x-direction.
             v: Flow displacement at y-direction.
-            vector_step: Number of step for displaying the vector
+            mask: The masking array.
         """
-        h, w = u.shape
-        x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
-        xp, yp = x[::vector_step, ::vector_step], y[::vector_step, ::vector_step]
-        up, vp = u[::vector_step, ::vector_step], v[::vector_step, ::vector_step]
-        mag = np.hypot(up, vp)
+        # Slicing the flow vector
+        up, vp = u[::self.vector_step, ::self.vector_step], v[::self.vector_step, ::self.vector_step]
+        mag = self.norm(np.hypot(up, vp))
 
         # Plotting preparation and Masking the data
-        maskp = mask[::vector_step, ::vector_step]
-        X, Y, U, V, MAG = xp[maskp], yp[maskp], up[maskp], vp[maskp], mag[maskp]
-        width_factor = 0.004
+        maskp = mask[::self.vector_step, ::self.vector_step]
+        up[~maskp], vp[~maskp] = np.nan, np.nan
 
-        if vector_color:
-            # Setting the vector color
-            colormap = cm.inferno
-            q = ax.quiver(X, Y, U, -V, MAG, cmap=colormap,
-                          units='xy', width=width_factor*w)
-            ax.colorbar()
+        # Adding vector values
+        if not self.use_color:
+            self.quiver.set_UVC(up, -vp, C=mag)
         else:
-            q = ax.quiver(X, Y, U, -V,
-                          units='xy', width=width_factor*w)
-
-        qk = ax.quiverkey(q, **quiver_key) if quiver_key else None
+            self.quiver.set_UVC(up, -vp)
 
 
 def get_image(basename, imdir, crop_window: Union[int, Tuple[int, int, int, int]] = 0) -> np.array:
@@ -268,8 +319,8 @@ def vid_flowviz(flodir, imdir, start_at: int = 0, num_images: int = -1, lossless
     print(f"Finish saving the video file ({vidpath})!")
 
 
-def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False, filename: Optional[str] = None
-              ) -> None:
+def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False, filename: Optional[str] = None,
+              velocity_factor: float = 1.0) -> None:
     """
     Plotting the color code
     params:
@@ -277,6 +328,8 @@ def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False,
         maxmotion: Maximum flow motion.
         show: Option to display the plot or not.
         filename: Full file path to save the plot; use None for not saving the plot!
+        resolution: To calibrate flow velocity from [pixel/frame] into [mm/second]
+    Returns the flow colormap in mm/second.
     """
     # Init.
     bname = os.path.basename(filename).rsplit("_", 1)[0]
@@ -284,7 +337,7 @@ def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False,
     # Color plot
     pts = np.linspace(-maxmotion, maxmotion, num=resolution)
     x, y = np.meshgrid(pts, pts)
-    flo = np.dstack([x, y])
+    flo = np.dstack([x, y]) * velocity_factor  # Calibrating into real flow vector
     flo_color = colorflow.motion_to_color(flo)
 
     # Plotting the image
