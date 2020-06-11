@@ -53,18 +53,21 @@ class FlowViz:
         self.key = key
 
         # Init.
-        self.img_dir, self.keyname = "", ""
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(1, 1, 1)
         self.ax.set_xticks([])  # Erasing the axis number
         self.ax.set_yticks([])
+        plt.subplots_adjust(right=0.70)
+
         self.im1, self.quiver = None, None
+        self.img_dir, self.keyname = "", ""
 
         # Scalar mapping
-        self.norm = colors.Normalize(vmin=0, vmax=maxmotion)
+        self.norm = colors.Normalize(vmin=0, vmax=self.maxmotion)
         self.scalar_map = cm.ScalarMappable(norm=self.norm, cmap=cm.hot_r)
         if (use_quiver and not use_color) or color_type == "mag":
-            self.fig.colorbar(self.scalar_map)
+            clb = self.fig.colorbar(self.scalar_map)
+            clb.ax.set_title("mm/s")
 
         if self.use_color == 1:
             self.keyname += "c"
@@ -252,6 +255,9 @@ class FlowViz:
             v: Flow displacement at y-direction.
             mask: The masking array.
         """
+        # Normalizing the flow
+        u, v = u / self.velocity_factor, v / self.velocity_factor
+
         # Slicing the flow vector
         up, vp = u[::self.vector_step, ::self.vector_step], v[::self.vector_step, ::self.vector_step]
         mag = self.norm(np.hypot(up, vp))
