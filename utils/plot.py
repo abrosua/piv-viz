@@ -4,13 +4,15 @@ import math
 from typing import Optional, List, Union, Tuple
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.cm as cm
 from matplotlib import animation
 from matplotlib import colors
-from PIL import Image
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from flowviz import colorflow, animate
+from PIL import Image
 
 import utils
 import matplotlib
@@ -33,6 +35,7 @@ class FlowViz:
         """
         # Input sanity checking
         assert len(labelpaths) > 0
+        assert type(use_color) == int and use_color < 3
         if color_type is not None:
             assert color_type in ["vort", "mag"]
 
@@ -46,7 +49,7 @@ class FlowViz:
         self.verbose = verbose
 
         # Variables
-        self.maxmotion = maxmotion * velocity_factor
+        self.maxmotion = maxmotion
         self.vector_step = vector_step
         self.crop_window = crop_window
         self.velocity_factor = velocity_factor
@@ -57,7 +60,7 @@ class FlowViz:
         self.ax = self.fig.add_subplot(1, 1, 1)
         self.ax.set_xticks([])  # Erasing the axis number
         self.ax.set_yticks([])
-        plt.subplots_adjust(right=0.70)
+        plt.subplots_adjust(right=0.70) if color_type == "mag" else None
 
         self.im1, self.quiver = None, None
         self.img_dir, self.keyname = "", ""
@@ -65,9 +68,14 @@ class FlowViz:
         # Scalar mapping
         self.norm = colors.Normalize(vmin=0, vmax=self.maxmotion)
         self.scalar_map = cm.ScalarMappable(norm=self.norm, cmap=cm.hot_r)
+
         if (use_quiver and not use_color) or color_type == "mag":
-            clb = self.fig.colorbar(self.scalar_map)
-            clb.ax.set_title("mm/s")
+            divider = make_axes_locatable(self.ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            clb = self.fig.colorbar(self.scalar_map, cax=cax)
+
+            unit = "pix" if velocity_factor == 1.0 else "mm/s"
+            clb.ax.set_title(unit)
 
         if self.use_color == 1:
             self.keyname += "c"
@@ -96,7 +104,8 @@ class FlowViz:
             # Reading flow and image files
             flow_crop = utils.array_cropper(flow, self.crop_window)
             mask_crop = utils.array_cropper(mask, self.crop_window)
-            img = imageio.imread(label.img_path)  # Read the raw image
+            img = np.array(Image.open(label.img_path).convert("RGB"))
+            # img = imageio.imread(label.img_path)  # Read the raw image
             img_crop = utils.array_cropper(img, self.crop_window)
 
             self._init_frame(img_crop, **quiver_key)  # Initialize the frame
@@ -115,8 +124,8 @@ class FlowViz:
 
             plt.clf()
 
-    def video(self, flodir: str, ext: Optional[str] = None, start_at: int = 0, num_images: int = -1,
-              fps: int = 1, dpi: int = 300, lossless: bool = True):
+    def video(self, flodir: str, ext: Optional[str] = None, imgext: str = "tif",
+              start_at: int = 0, num_images: int = -1, fps: int = 1, dpi: int = 300) -> None:
         """
         Generating video
         """
@@ -125,7 +134,10 @@ class FlowViz:
                                                      crop_window=self.crop_window)
         flows = flows * self.velocity_factor
 
-        fname_addition = f"-{start_at}_end" if num_images < 0 else f"-{start_at}_{num_images}"
+        assert num_images != 0
+        num_images = len(flonames) if num_images < 0 else num_images
+
+        fname_addition = f"-{start_at}_{num_images}"
         self.img_dir = str(os.path.normpath(flodir).split(os.sep)[-2])
         imgdir = os.path.join("./frames", self.img_dir)
 
@@ -134,7 +146,7 @@ class FlowViz:
 
         for i, floname in enumerate(flonames):
             bname = os.path.basename(floname).rsplit("_", 1)[0]
-            imagepaths.append(os.path.join(imgdir, bname + ".tif"))
+            imagepaths.append(os.path.join(imgdir, bname + f".{imgext}"))
 
             if len(self.labelpaths) == 1:
                 labelpath = self.labelpaths[0]
@@ -151,7 +163,9 @@ class FlowViz:
             assert os.path.isfile(labelpath)
 
         # Initialize frame
-        img_tmp = utils.array_cropper(imageio.imread(imagepaths[0]), self.crop_window)
+        # img = imageio.imread(imagepaths[0])
+        img = np.array(Image.open(imagepaths[0]).convert("RGB"))
+        img_tmp = utils.array_cropper(img, self.crop_window)
         self._init_frame(img_tmp)
 
         # Generate animation writer
@@ -161,8 +175,15 @@ class FlowViz:
 
         if ext is not None:
             vidpath = os.path.join(os.path.dirname(flodir), "videos", vidname + f".{ext}")
-            writer = animation.writers['ffmpeg'](fps=fps, metadata=dict(artist="Faber"), bitrate=-1)
-            flowviz_anim.save(vidpath, writer=writer, dpi=dpi)
+            if not os.path.isdir(os.path.dirname(vidpath)):
+                os.makedirs(os.path.dirname(vidpath))
+
+            if ext == "gif":  # GIF format
+                writer = animation.writers["imagemagick"](fps=fps, metadata=dict(artist="abrosua"), bitrate=-1)
+                flowviz_anim.save(vidpath, writer=writer)
+            else:  # Video codec format
+                writer = animation.writers["ffmpeg"](fps=fps, metadata=dict(artist="abrosua"), bitrate=-1)
+                flowviz_anim.save(vidpath, writer=writer, dpi=dpi)
 
     def _capture_frame(self, idx, labelpaths: List[str], imagepaths: List[str], flows: np.array):
         """
@@ -176,7 +197,9 @@ class FlowViz:
         _, mask = label.get_flo(self.key)
 
         # Gathering each frame
-        img_crop = utils.array_cropper(imageio.imread(imagepath), self.crop_window)
+        # img = imageio.imread(imagepath)
+        img = np.array(Image.open(imagepath).convert("RGB"))
+        img_crop = utils.array_cropper(img, self.crop_window)
         mask_crop = utils.array_cropper(mask, self.crop_window)
 
         self._draw_frame(flows[idx, :, :, :], img_crop, mask_crop)
@@ -193,21 +216,22 @@ class FlowViz:
             self.im2 = self.ax.imshow(np.zeros([h, w, 4], dtype=image.dtype))
 
         # Quiver init.
-        x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
-        xp, yp = x[::self.vector_step, ::self.vector_step], y[::self.vector_step, ::self.vector_step]
-        mag = np.hypot(xp, yp)
-        width_factor = 0.004
+        if self.use_quiver:
+            x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+            xp, yp = x[::self.vector_step, ::self.vector_step], y[::self.vector_step, ::self.vector_step]
+            mag = np.hypot(xp, yp)
+            width_factor = 0.004
 
-        if not self.use_color:
-            # Setting the vector color
-            colormap = self.scalar_map.get_cmap()
-            self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(mag),
-                                         cmap=colormap, units='xy', width=width_factor*w, scale=width_factor*100)
-        else:
-            self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp),
-                                         units='xy', width=width_factor*w, scale=width_factor*100)
+            if not self.use_color:
+                # Setting the vector color
+                colormap = self.scalar_map.get_cmap()
+                self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(mag),
+                                             cmap=colormap, units='xy', width=width_factor*w, scale=width_factor*100)
+            else:
+                self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp),
+                                             units='xy', width=width_factor*w, scale=width_factor*100)
 
-        qk = self.ax.quiverkey(self.quiver, **quiver_key) if quiver_key else None
+            qk = self.ax.quiverkey(self.quiver, **quiver_key) if quiver_key else None
 
     def _draw_frame(self, flow: np.array, image: np.array, mask: np.array):
         """
@@ -221,27 +245,31 @@ class FlowViz:
 
         if self.color_type == "vort":  # TODO: create vorticity calculation function!
             flo_rgb = None
-        elif self.color_type == "mag":  # TODO: fixing the magnitude color plot!
+        elif self.color_type == "mag":
             flo_rgb = np.uint8(self.scalar_map.to_rgba(mag) * 255)[:, :, :3]
         else:
             flo_rgb = colorflow.motion_to_color(flow, maxmotion=self.maxmotion)
 
         # Superpose the image and flow color visualization if use_color is activated
-        if self.use_color == 1:
+        if self.use_color == 0:
+            image[mask] = 255
+            self.im1.set_data(image)
+
+        elif self.use_color == 1:
             flo_rgb[~mask] = 0  # Merging image and plot the result
             image[mask] = 0
             self.im1.set_data(image + flo_rgb)
 
-        elif self.use_color == 2:  # TODO: FIX the translucent color plot feature!
+        elif self.use_color == 2:
             flo_rgb[~mask] = 255
-            alpha = np.uint8((mag - np.min(mag)) * 255 / (np.max(mag) - np.min(mag)))
+            # alpha = np.uint8((mag - np.min(mag)) * 255 / (np.max(mag) - np.min(mag)))
+            alpha = np.uint8(mag * 255 / self.maxmotion)
             flo_rgba = np.dstack([flo_rgb, alpha])
 
             self.im1.set_data(image)
             self.im2.set_data(flo_rgba)
 
         else:
-            image[mask] = 255
             self.im1.set_data(image)
 
         # Adding quiver plot (if necessary)
@@ -277,6 +305,8 @@ def get_image(basename, imdir, crop_window: Union[int, Tuple[int, int, int, int]
     imname = basename + ".tif"
     impath = os.path.join(imdir, imname)
     img = imageio.imread(impath)
+    if len(img.shape) < 3:
+        img = np.dstack([img, img, img])
 
     return utils.array_cropper(img, crop_window)
 
@@ -371,7 +401,39 @@ def color_map(resolution: int = 256, maxmotion: float = 1.0, show: bool = False,
     plt.clf()
 
 
+def filter_plot(csvname: str, key: List[str], avg_window: int = 1, layered: bool = False,
+                show: bool = False, filename: Optional[str] = None, title: Optional[str] = None):
+    """
+    Applying moving average for signal filtering, and plot it
+    """
+    df = pd.read_csv(csvname, index_col=0)
+    df_roll = df[key].rolling(window=avg_window, min_periods=1).mean()  # TODO: Fix the NaNs in noise filtering with moving average
+
+    for k in key:
+        new_key = f"filtered_{k}" if layered else k
+        df[new_key] = df_roll[k]
+
+    if layered:
+        fname, fext = os.path.splitext(filename)
+        filename = fname + f"-layered{fext}"
+
+    df.plot()
+    plt.title(title) if title is not None else None
+    plt.xlabel("Time stamp [frame]")
+    plt.ylabel("Flow magnitude [pix]")
+
+    plt.show() if show else None
+    plt.savefig(filename, dpi=300, bbox_inches='tight') if filename else None
+    plt.clf()
+
+
 if __name__ == "__main__":
+    # Plot maximum flow
+    max_path = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/report/Test 03 L3 NAOCL 22000 fpstif_max.csv"
+    maxplot_path = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/report/Test 03 L3 NAOCL 22000 fpstif_max.png"
+    filter_plot(max_path, avg_window=80, key=["maxflo"], filename=maxplot_path, layered=False,
+                title="Change of maximum flow magnitude")
+
     # Generate colormap
     color_map(resolution=256, maxmotion=4, show=True)
 
