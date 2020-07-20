@@ -24,7 +24,8 @@ if __name__ == "__main__":
     labelpaths = sorted(glob(os.path.join("./labels", imgdir, "*.json")))
 
     #  <-------------- Calculate max velo, calibrartion factor and  colormap (Uncomment if used) -------------->
-    max_velo_mag = 9.7
+    max_velo_mag = 9.7  # [pix]
+    max_velo_mag_real = 3000  # [mm/s] (use None if not needed!)
 
     calib_path = "./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_00000.json"
     calib_label = utils.Label(calib_path, netname, verbose=1).label["calib"]
@@ -33,6 +34,7 @@ if __name__ == "__main__":
 
     cal_factor = cal_factor / calib_line  # [mm/pixel]
     velo_factor = camera_fps * cal_factor
+    max_velo_mag_real = max_velo_mag * velo_factor if max_velo_mag_real is None else max_velo_mag_real
 
     # utils.color_map(maxmotion=max_velo_mag, show=True)
 
@@ -43,16 +45,27 @@ if __name__ == "__main__":
     step = 5
     cropper = (100, 0, 0, 0)
     viz_plot = utils.FlowViz(labelpaths, netname, vector_step=step, use_quiver=True, use_color=2, color_type="mag",
-                             maxmotion=max_velo_mag, crop_window=cropper, velocity_factor=velo_factor,
+                             maxmotion=max_velo_mag_real, crop_window=cropper, velocity_factor=velo_factor,
                              verbose=1)
     # viz_plot.plot(file_extension=ext, show=show_figure)
 
     flodir = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/flow"
     vid_labelpath = ["./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_13124.json"]
     viz_video = utils.FlowViz(vid_labelpath, netname, vector_step=step, use_quiver=True, use_color=2, color_type="mag",
-                              key="video", maxmotion=max_velo_mag, crop_window=cropper, velocity_factor=velo_factor,
+                              key="video", maxmotion=max_velo_mag_real, crop_window=cropper, velocity_factor=velo_factor,
                               verbose=1)
-    viz_video.video(flodir, start_at=4900, num_images=120, fps=3, ext="mp4")
+    # viz_video.video(flodir, start_at=8600, num_images=90, fps=3, ext="mp4")
+
+    tmpdir = "./results/Hui-LiteFlowNet/meme/flow"
+    tmp_labelpath = ["./labels/meme/meme_00000.json"]
+    # tmpdir = "./results/PIV-LiteFlowNet-en/test/flow"
+    # tmp_labelpath = ["./labels/test/cylinder_Re40_00001_img1.json"]
+    tmp_netname = os.path.basename(os.path.dirname(os.path.dirname(tmpdir)))
+
+    max_flow, _ = utils.get_max_flow(tmpdir, tmp_labelpath[0], verbose=1)
+    tmp_video = utils.FlowViz(tmp_labelpath, tmp_netname, vector_step=16, use_quiver=False, use_color=-2, color_type=None,
+                              key="video", maxmotion=1.3*max_flow, verbose=1)
+    tmp_video.video(tmpdir, fps=3, ext="gif", imgext="tif")
 
 
     # <------------------------ Get regional velocity (uncomment for usage) ------------------------>

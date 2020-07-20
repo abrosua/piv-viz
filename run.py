@@ -10,7 +10,7 @@ from tqdm import tqdm
 from utils import tools
 from utils import Inference, hui_liteflownet, piv_liteflownet, flowname_modifier, write_flow
 
-maindir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+maindir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(maindir)
 pivdir = os.path.join(os.path.dirname(maindir), "thesis_faber")
 
@@ -22,12 +22,13 @@ if __name__ == '__main__':
 	# Input frames init.
 	start_id = 0
 	num_images = -1
-	dir = "./frames/Test 02 L3 EDTA END TIP 22000 fpstif"
+	# dir = "./frames/stepen-exp-rot32"
+	dir = "./frames/test"
 	loopdir = [None]  # [None, 5, 10, 100]
 
 	# Net init,
-	modeldir = "models/pretrain_torch/Hui-LiteFlowNet.paramOnly"
-	# modeldir = "models/pretrain_torch/PIV-LiteFlowNet-en.paramOnly"
+	# modeldir = "models/pretrain_torch/Hui-LiteFlowNet.paramOnly"  # Comment if NOT needed!
+	modeldir = "models/pretrain_torch/PIV-LiteFlowNet-en.paramOnly"  # Comment if NOT needed!
 	args_model = os.path.join(pivdir, modeldir)
 
 	if os.path.isfile(args_model):
@@ -37,8 +38,8 @@ if __name__ == '__main__':
 		raise ValueError('Unknown params input!')
 
 	device = 'cuda' if torch.cuda.is_available() else 'cpu'
-	net = hui_liteflownet(weights).to(device)
-	#net = piv_liteflownet(weights).to(device)
+	# net = hui_liteflownet(weights).to(device)  # Comment if NOT needed!
+	net = piv_liteflownet(weights).to(device)  # Comment if NOT needed!
 
 	out_names = []
 	for i in loopdir:
@@ -46,8 +47,8 @@ if __name__ == '__main__':
 		imnames = tools.getpair(inputdir, n_images=num_images, start_at=start_id)
 
 		# Name checking
-		num_images = "end" if num_images < 0 else num_images
 		is_all_flow = (start_id == 0) and (num_images < 0)
+		num_images = "end" if num_images < 0 else num_images
 
 		outsubdir = f"{os.path.basename(inputdir)}-{start_id}_{num_images}" if not is_all_flow \
 			else os.path.basename(inputdir)
