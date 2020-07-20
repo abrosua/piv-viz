@@ -4,6 +4,7 @@ from glob import glob
 from typing import Optional, List, Tuple
 
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -232,7 +233,7 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool =
 
 
 def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0, end_at: int = -1,
-                 verbose: int = 0) -> float:
+                 filename: Optional[str] = None, verbose: int = 0) -> Tuple[float, np.array]:
     """
     Get maximum flow magnitude within the flow direction.
     params:
@@ -260,8 +261,9 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
 
     # Iterate over the flopaths
     max_flo = 0.0
+    max_flos = []
 
-    for flopath in tqdm(flopaths, desc=f"Max flow at {floname}", unit="frame"):
+    for i, flopath in enumerate(tqdm(flopaths, desc=f"Max flow at {floname}", unit="frame")):
         flow = utils.read_flow(flopath)
         if mask_label is not None:
             mask = shape_to_mask(flow.shape[:2], mask_label["points"][0], shape_type=mask_label['shape_type'])
@@ -269,10 +271,18 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
 
         max_mag_flo = np.max(np.linalg.norm(flow, axis=-1))
         max_flo = max_mag_flo if max_mag_flo > max_flo else max_flo
+        max_flos.append([i, max_mag_flo])
+
+    max_flos = np.array(max_flos)
+    max_flos_df = pd.DataFrame(max_flos[:, 1], columns=["maxflo"], index=max_flos[:, 0].astype('int32'))
 
     if verbose:
-        tqdm.write(f"Maximum flow at {floname} (from {start_at} to {end_at}) is {max_flo:.2f}")
-    return max_flo
+        tqdm.write(f"Maximum flow at {floname} (from frame {start_at} to {end_at}) is {max_flo:.2f}")
+
+    if filename:
+        max_flos_df.to_csv(filename, index_label="frame")
+
+    return max_flo, max_flos
 
 
 if __name__ == '__main__':
@@ -284,7 +294,8 @@ if __name__ == '__main__':
 
     # <------------ Use get_max_flow (uncomment for usage) ------------>
     labelpath = "./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_13124.json"
-    max_flow = get_max_flow(flodir, labelpath, verbose=1)
+    max_path = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/report/Test 03 L3 NAOCL 22000 fpstif_max.csv"
+    max_flow, max_flows = get_max_flow(flodir, labelpath, verbose=1, filename=max_path)
 
     # <------------ Use get_label (uncomment for usage) ------------>
     netname = "Hui-LiteFlowNet"
