@@ -233,7 +233,8 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool =
 
 
 def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0, end_at: int = -1,
-                 filename: Optional[str] = None, verbose: int = 0) -> Tuple[float, np.array]:
+                 filename: Optional[str] = None, aggregate: Tuple[str, ...] = ('max'),
+                 verbose: int = 0) -> Tuple[float, np.array]:
     """
     Get maximum flow magnitude within the flow direction.
     params:
@@ -246,7 +247,7 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
     # Init.
     assert os.path.isdir(flodir)
     name_list = os.path.normpath(flodir).split(os.sep)
-    floname, netname = name_list[-2], name_list[-3]
+    floname, netname = str(name_list[-2]), str(name_list[-3])
 
     if labelpath is not None:
         assert os.path.isfile(labelpath)
@@ -254,14 +255,13 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
     else:
         mask_label = None
 
-
     flopaths_raw = sorted(glob(os.path.join(flodir, "*.flo")))
     end_at = len(flopaths_raw) if end_at < 0 else end_at
     flopaths = flopaths_raw[start_at:end_at]
 
     # Iterate over the flopaths
     max_flo = 0.0
-    max_flos = []
+    data_flos = []
 
     for i, flopath in enumerate(tqdm(flopaths, desc=f"Max flow at {floname}", unit="frame")):
         flow = utils.read_flow(flopath)
@@ -269,20 +269,26 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
             mask = shape_to_mask(flow.shape[:2], mask_label["points"][0], shape_type=mask_label['shape_type'])
             flow = flow[mask]
 
-        max_mag_flo = np.max(np.linalg.norm(flow, axis=-1))
-        max_flo = max_mag_flo if max_mag_flo > max_flo else max_flo
-        max_flos.append([i, max_mag_flo])
+        mag_flo = np.linalg.norm(flow, axis=-1)
+        max_flo = np.max(mag_flo) if np.max(mag_flo) > max_flo else max_flo
 
-    max_flos = np.array(max_flos)
-    max_flos_df = pd.DataFrame(max_flos[:, 1], columns=["maxflo"], index=max_flos[:, 0].astype('int32'))
+        agg_flo = [i]
+        for agg in aggregate:
+            agg_module = getattr(np, agg)
+            agg_flo.append(agg_module(mag_flo))
+
+        data_flos.append(agg_flo)
+
+    data_flos = np.array(data_flos)
+    data_flos_df = pd.DataFrame(data_flos[:, 1], columns=aggregate, index=data_flos[:, 0].astype('int32'))
 
     if verbose:
         tqdm.write(f"Maximum flow at {floname} (from frame {start_at} to {end_at}) is {max_flo:.2f}")
 
     if filename:
-        max_flos_df.to_csv(filename, index_label="frame")
+        data_flos_df.to_csv(filename, index_label="frame")
 
-    return max_flo, max_flos
+    return max_flo, data_flos
 
 
 if __name__ == '__main__':
