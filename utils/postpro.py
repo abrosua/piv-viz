@@ -77,13 +77,13 @@ class Label:
             key: The label key of the flow to obtain (e.g., 'flow', 'v1', 'v2')
             fill_with: Filling value to the masked vector.
         """
-        fill_with = np.nan if fill_with is None else fill_with
-
         if key in self.label.keys():
             flow_label = self.label[key]
+
             # Flow init.
             out_flow = utils.read_flow(self.flopath)
-            mask, mask_flow = np.full(out_flow.shape[:2], False), np.full(out_flow.shape, fill_with)
+            mask = np.full(out_flow.shape[:2], False)
+            mask_flow = np.full(out_flow.shape, fill_with) if fill_with is not None else out_flow
 
             # Filling the masked flow array
             for flow_point in flow_label['points']:
@@ -187,8 +187,10 @@ def region_velo(labelpath: str, netname: str, flodir: str, key: str, fps: int = 
     return velo_record
 
 
-def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool = False,
-                 filename: Optional[str] = None, verbose: int = 0) -> Tuple[np.array, List[str], float]:
+def column_level(labelpaths: List[str], netname: str, fps: int = 1, calib: float = 1., show: bool = False,
+                 filename: Optional[str] = None, verbose: int = 0, xlim: Optional[List[float]] = None,
+                 add_title: bool = False,
+                 ) -> Tuple[np.array, List[str], float, plt.Axes]:
     """
     Gathering a series of air column coordinates, to plot the change in air column level.
     params:
@@ -211,29 +213,30 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, show: bool =
 
         if column_tmp is None:
             continue
-        column.append([time_frame, column_tmp])
+        column.append([time_frame, column_tmp * calib])
         img_paths.append(label.img_path)
 
     column_mat = np.array(column)
     init_point = column_mat[0, 1]
     column_mat[:, 1] -= init_point  # Each level is relative to the initial condition!
 
-    plt.plot(column_mat[:, 0], column_mat[:, 1])
-    plt.title(f"Column level change of {flowdir}")
-    # plt.ylim(bottom=0)
-    plt.xlim(left=0)
-    plt.xlabel("Time stamp [frame]")
-    plt.ylabel("Relative column level [pix]")
+    # Define plotting
+    fig, ax = plt.subplots()
+    ax.plot(column_mat[:, 0], column_mat[:, 1])
+    ax.set_title(f"Column level change of {flowdir}") if add_title else None
+    ax.set_ylim(top=0)
+    ax.set_xlim(left=0) if xlim is None else plt.xlim(xlim)
+    ax.set_xlabel("Time stamp [s]")
+    ax.set_ylabel("Relative column level [mm]")
 
     plt.show() if show else None
     plt.savefig(filename, dpi=300, bbox_inches='tight') if filename else None
-    plt.clf()
 
-    return column_mat, img_paths, -init_point
+    return column_mat, img_paths, -init_point, ax
 
 
 def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0, end_at: int = -1,
-                 filename: Optional[str] = None, aggregate: Tuple[str, ...] = ('max'),
+                 filename: Optional[str] = None, aggregate: Tuple[str, ...] = ('max'), calib: float = 1.0, fps: int = 1,
                  verbose: int = 0) -> Tuple[float, np.array]:
     """
     Get maximum flow magnitude within the flow direction.
@@ -248,6 +251,7 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
     assert os.path.isdir(flodir)
     name_list = os.path.normpath(flodir).split(os.sep)
     floname, netname = str(name_list[-2]), str(name_list[-3])
+    velo_factor = fps * calib
 
     if labelpath is not None:
         assert os.path.isfile(labelpath)
@@ -260,35 +264,65 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
     flopaths = flopaths_raw[start_at:end_at]
 
     # Iterate over the flopaths
-    max_flo = 0.0
-    data_flos = []
+    max_flo, vort_flo, shear_flo, normal_flo = 0.0, 0.0, 0.0, 0.0
+    data_flos = {"flow": [[0.0] * (len(aggregate) + 1)],
+                 "vort": [[0.0] * (len(aggregate)*2 + 1)],
+                 "shear": [[0.0] * (len(aggregate)*2 + 1)],
+                 "normal": [[0.0] * (len(aggregate)*2 + 1)],
+                 }
 
     for i, flopath in enumerate(tqdm(flopaths, desc=f"Max flow at {floname}", unit="frame")):
         flow = utils.read_flow(flopath)
+        flow = flow * velo_factor  # Calibrate flow into real velocity
+        vort, shear, normal = utils.calc_vorticity(flow, calib=calib)
+        time_id = (i + 1) / fps
+
         if mask_label is not None:
             mask = shape_to_mask(flow.shape[:2], mask_label["points"][0], shape_type=mask_label['shape_type'])
-            flow = flow[mask]
+            flow, vort, shear, normal = flow[mask], vort[mask], shear[mask], normal[mask]
 
         mag_flo = np.linalg.norm(flow, axis=-1)
         max_flo = np.max(mag_flo) if np.max(mag_flo) > max_flo else max_flo
+        vort_flo = np.max(np.abs(vort)) if np.max(np.abs(vort)) > vort_flo else vort_flo
+        shear_flo = np.max(np.abs(shear)) if np.max(np.abs(shear)) > shear_flo else shear_flo
+        normal_flo = np.max(np.abs(normal)) if np.max(np.abs(normal)) > normal_flo else normal_flo
 
-        agg_flo = [i]
+        agg_flo, agg_vor, agg_shear, agg_normal = [time_id], [time_id], [time_id], [time_id]
         for agg in aggregate:
             agg_module = getattr(np, agg)
             agg_flo.append(agg_module(mag_flo))
+            agg_vor.extend([agg_module(vort[vort>0]), agg_module(np.abs(vort[vort<0]))])
+            agg_shear.extend([agg_module(shear[shear > 0]), agg_module(np.abs(shear[shear < 0]))])
+            agg_normal.extend([agg_module(normal[normal > 0]), agg_module(np.abs(normal[normal < 0]))])
 
-        data_flos.append(agg_flo)
+        data_flos["flow"].append(agg_flo)
+        data_flos["vort"].append(agg_vor)
+        data_flos["shear"].append(agg_shear)
+        data_flos["normal"].append(agg_normal)
 
-    data_flos = np.array(data_flos)
-    data_flos_df = pd.DataFrame(data_flos[:, 1], columns=aggregate, index=data_flos[:, 0].astype('int32'))
+    col_name, col_name_de = ['time'], ['time']
+    for k in aggregate:
+        col_name.append(k)
+        col_name_de.extend([f"{k}_p", f"{k}_n"])
+
+    data_flos_df = {}
+    for k, v in data_flos.items():
+        data_flos_tmp = pd.DataFrame(np.array(v), columns=col_name) if k == "flow" else \
+            pd.DataFrame(np.array(v), columns=col_name_de)
+        data_flos_df[k] = data_flos_tmp
+
+        if filename:
+            filename_tmp, ext = os.path.splitext(filename)
+            filepath = filename_tmp + f"-{k}{ext}"
+            data_flos_tmp.to_csv(filepath, index_label="frame")
 
     if verbose:
         tqdm.write(f"Maximum flow at {floname} (from frame {start_at} to {end_at}) is {max_flo:.2f}")
+        tqdm.write(f"Maximum vorticity at {floname} (from frame {start_at} to {end_at}) is {vort_flo:.2f}")
+        tqdm.write(f"Maximum shear stress at {floname} (from frame {start_at} to {end_at}) is {shear_flo:.2f}")
+        tqdm.write(f"Maximum normal stress at {floname} (from frame {start_at} to {end_at}) is {normal_flo:.2f}")
 
-    if filename:
-        data_flos_df.to_csv(filename, index_label="frame")
-
-    return max_flo, data_flos
+    return max_flo, data_flos_df
 
 
 if __name__ == '__main__':
@@ -301,7 +335,7 @@ if __name__ == '__main__':
     # <------------ Use get_max_flow (uncomment for usage) ------------>
     labelpath = "./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_13124.json"
     max_path = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/report/Test 03 L3 NAOCL 22000 fpstif_max.csv"
-    max_flow, max_flows = get_max_flow(flodir, labelpath, verbose=1, filename=max_path)
+    max_flow, max_flows = get_max_flow(flodir, labelpath, verbose=1, filename=max_path, aggregate=("max", "mean"))
 
     # <------------ Use get_label (uncomment for usage) ------------>
     netname = "Hui-LiteFlowNet"
@@ -313,15 +347,15 @@ if __name__ == '__main__':
     for labelpath in labelpaths:
         labels = Label(labelpath, netname)
 
-        v1_tmp, _ = labels.get_flo('v1')
+        v1_tmp, _ = labels.get_flo('v1', fill_with=np.nan)
         if v1_tmp is not None:
             v1[labelpath] = v1_tmp
 
-        v2_tmp, _ = labels.get_flo('v2')
+        v2_tmp, _ = labels.get_flo('v2', fill_with=np.nan)
         if v2_tmp is not None:
             v2[labelpath] = v2_tmp
 
-        flow_tmp, _ = labels.get_flo('flow')
+        flow_tmp, _ = labels.get_flo('flow', fill_with=np.nan)
         if flow_tmp is not None:
             flow[labelpath] = flow_tmp
 
