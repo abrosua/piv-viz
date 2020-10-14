@@ -23,12 +23,12 @@ if __name__ == '__main__':
 	start_id = 0
 	num_images = -1
 	# dir = "./frames/stepen-exp-rot32"
-	dir = "./frames/test"
+	dir = "./frames/Test 06 EDTA EA Full 22000 fps"
 	loopdir = [None]  # [None, 5, 10, 100]
 
 	# Net init,
-	# modeldir = "models/pretrain_torch/Hui-LiteFlowNet.paramOnly"  # Comment if NOT needed!
-	modeldir = "models/pretrain_torch/PIV-LiteFlowNet-en.paramOnly"  # Comment if NOT needed!
+	modeldir = "models/pretrain_torch/Hui-LiteFlowNet.paramOnly"  # Comment if NOT needed!
+	# modeldir = "models/pretrain_torch/PIV-LiteFlowNet-en.paramOnly"  # Comment if NOT needed!
 	args_model = os.path.join(pivdir, modeldir)
 
 	if os.path.isfile(args_model):
@@ -38,8 +38,8 @@ if __name__ == '__main__':
 		raise ValueError('Unknown params input!')
 
 	device = 'cuda' if torch.cuda.is_available() else 'cpu'
-	# net = hui_liteflownet(weights).to(device)  # Comment if NOT needed!
-	net = piv_liteflownet(weights).to(device)  # Comment if NOT needed!
+	net = hui_liteflownet(weights, version=1).to(device)  # Comment if NOT needed!
+	# net = piv_liteflownet(weights, version=1).to(device)  # Comment if NOT needed!
 
 	out_names = []
 	for i in loopdir:
