@@ -13,11 +13,11 @@ matplotlib.use('TkAgg')
 
 if __name__ == "__main__":
     # <------------------------------------ INPUT ------------------------------------>
-    ext = None  # 'png' for standard image and 'eps' for latex format; use None to disable!
-    show_figure = True
+    ext = "png"  # 'png' for standard image and 'eps' for latex format; use None to disable!
+    show_figure = False
 
     camera_fps = 22000  # INPUT the camera FPS in here!
-    cal_factor = 1.0  # [mm] INPUT the pixel-to-real displacement calibration here!
+    cal_factor = 4.0  # [mm] INPUT the pixel-to-real displacement calibration here!
 
     netname = "Hui-LiteFlowNet"
     imgdir = "Test 03 L3 NAOCL 22000 fpstif"  # Test 03 L3 EDTA 22000 fpstif
@@ -25,7 +25,12 @@ if __name__ == "__main__":
 
     #  <-------------- Calculate max velo, calibrartion factor and  colormap (Uncomment if used) -------------->
     max_velo_mag = 9.7  # [pix]
-    max_velo_mag_real = 3000  # [mm/s] (use None if not needed!)
+    max_velo_mag_real = 8000  # [mm/s] (use None if NOT needed!) - 3000 or 7500 for NAOCL flow
+
+    # Vorticity/Shear stress
+    max_vort_real = 72  # Vort: 72 [1/ms] (use None if NOT needed!)
+    max_shear_real = 50  # Shear: 90 [N/m2] (use None if NOT needed!)
+    viscosity = 0.001213  # [Pa.s] Bukiet, et al., 2013
 
     calib_path = "./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_00000.json"
     calib_label = utils.Label(calib_path, netname, verbose=1).label["calib"]
@@ -35,6 +40,7 @@ if __name__ == "__main__":
     cal_factor = cal_factor / calib_line  # [mm/pixel]
     velo_factor = camera_fps * cal_factor
     max_velo_mag_real = max_velo_mag * velo_factor if max_velo_mag_real is None else max_velo_mag_real
+    factor = cal_factor / viscosity
 
     # utils.color_map(maxmotion=max_velo_mag, show=True)
 
@@ -45,16 +51,26 @@ if __name__ == "__main__":
     step = 5
     cropper = (100, 0, 0, 0)
     viz_plot = utils.FlowViz(labelpaths, netname, vector_step=step, use_quiver=True, use_color=2, color_type="mag",
-                             maxmotion=max_velo_mag_real, crop_window=cropper, velocity_factor=velo_factor,
-                             verbose=1)
-    # viz_plot.plot(file_extension=ext, show=show_figure)
+                             key="flow", maxmotion=max_velo_mag_real, crop_window=cropper,
+                             calib=cal_factor, fps=camera_fps, verbose=1)
+    # viz_plot.plot(ext=ext, show=show_figure)
 
     flodir = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/flow"
     vid_labelpath = ["./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_13124.json"]
-    viz_video = utils.FlowViz(vid_labelpath, netname, vector_step=step, use_quiver=True, use_color=2, color_type="mag",
-                              key="video", maxmotion=max_velo_mag_real, crop_window=cropper, velocity_factor=velo_factor,
-                              verbose=1)
-    # viz_video.video(flodir, start_at=8600, num_images=90, fps=3, ext="mp4")
+    viz_video = utils.FlowViz(vid_labelpath, netname, vector_step=step, use_quiver=True, use_color=2, color_type="shear",
+                              key="video", maxmotion=max_shear_real, crop_window=cropper, factor=factor,
+                              calib=cal_factor, fps=camera_fps, verbose=1)
+
+    # ***** Multi PLOT *****
+    # viz_video.multiplot(flodir, ext=ext, start_at=0, num_images=5000)
+
+    # ***** VIDEO *****
+    # viz_video.video(flodir, start_at=8100, num_images=400, fps=3, ext="mp4")
+    #viz_video.video(flodir, start_at=9900, num_images=-1, fps=30, ext="mp4")
+    start_id = [0.2, 0.3, 0.37, 0.44, 0.5, 0.55]  # [s]
+    for id in start_id:
+        id_frame = int(camera_fps * id)
+        viz_video.video(flodir, start_at=id_frame, num_images=400, fps=3, ext="mp4")
 
     tmpdir = "./results/Hui-LiteFlowNet/meme/flow"
     tmp_labelpath = ["./labels/meme/meme_00000.json"]
