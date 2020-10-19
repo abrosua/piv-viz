@@ -253,6 +253,11 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
     floname, netname = str(name_list[-2]), str(name_list[-3])
     velo_factor = fps * calib
 
+    if filename:
+        savedir = os.path.dirname(filename)
+        if not os.path.isdir(savedir):
+            os.makedirs(savedir)
+
     if labelpath is not None:
         assert os.path.isfile(labelpath)
         mask_label = Label(labelpath, netname, verbose=verbose).label["video"]
