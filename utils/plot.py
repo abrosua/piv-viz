@@ -350,8 +350,8 @@ class FlowViz:
             self.im1.set_data(image + flo_rgb)
         elif self.use_color == 2:
             flo_rgb[~mask] = 255
-            alpha = np.uint8((flo_alpha - np.min(flo_alpha)) * 255 / (np.max(flo_alpha) - np.min(flo_alpha)))
-            # alpha = np.uint8(flo_alpha * 255 / self.maxmotion)
+            # alpha = np.uint8((flo_alpha - np.min(flo_alpha)) * 255 / (np.max(flo_alpha) - np.min(flo_alpha)))
+            alpha = np.uint8(flo_alpha * 255 / self.maxmotion)
             flo_rgba = np.dstack([flo_rgb, alpha])
 
             self.im1.set_data(image)

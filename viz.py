@@ -20,19 +20,19 @@ if __name__ == "__main__":
     cal_factor = 4.0  # [mm] INPUT the pixel-to-real displacement calibration here!
 
     netname = "Hui-LiteFlowNet"
-    imgdir = "Test 03 L3 NAOCL 22000 fpstif"  # Test 03 L3 EDTA 22000 fpstif
+    imgdir = "Test 06 EDTA EA Full 22000 fps"
     labelpaths = sorted(glob(os.path.join("./labels", imgdir, "*.json")))
 
     #  <-------------- Calculate max velo, calibrartion factor and  colormap (Uncomment if used) -------------->
     max_velo_mag = 9.7  # [pix]
-    max_velo_mag_real = 8000  # [mm/s] (use None if NOT needed!) - 3000 or 7500 for NAOCL flow
+    max_velo_mag_real = 4500  # [mm/s] (use None if NOT needed!) - 3000 or 7500 for NAOCL flow
 
     # Vorticity/Shear stress
-    max_vort_real = 72  # Vort: 72 [1/ms] (use None if NOT needed!)
-    max_shear_real = 50  # Shear: 90 [N/m2] (use None if NOT needed!)
-    viscosity = 0.001213  # [Pa.s] Bukiet, et al., 2013
+    max_vort_real = 32  # [1/ms] (use None if NOT needed!)
+    max_shear_real = None  # [N/m2] (use None if NOT needed!)
+    viscosity = 1  # Still NO reference
 
-    calib_path = "./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_00000.json"
+    calib_path = "./labels/Test 06 EDTA EA Full 22000 fps/Test 06 EDTA EA Full 22000 fps_00000.json"
     calib_label = utils.Label(calib_path, netname, verbose=1).label["calib"]
     calib_point = np.array(calib_label["points"][0])
     calib_line = np.linalg.norm(calib_point[0, :] - calib_point[1, :])
@@ -55,19 +55,19 @@ if __name__ == "__main__":
                              calib=cal_factor, fps=camera_fps, verbose=1)
     # viz_plot.plot(ext=ext, show=show_figure)
 
-    flodir = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/flow"
-    vid_labelpath = ["./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_13124.json"]
-    viz_video = utils.FlowViz(vid_labelpath, netname, vector_step=step, use_quiver=True, use_color=2, color_type="shear",
-                              key="video", maxmotion=max_shear_real, crop_window=cropper, factor=factor,
+    flodir = "./results/Hui-LiteFlowNet/Test 06 EDTA EA Full 22000 fps/flow"
+    vid_labelpath = ["./labels/Test 06 EDTA EA Full 22000 fps/Test 06 EDTA EA Full 22000 fps_00000.json"]
+    viz_video = utils.FlowViz(vid_labelpath, netname, vector_step=step, use_quiver=True, use_color=2, color_type="mag",
+                              key="video", maxmotion=max_velo_mag_real, crop_window=cropper, factor=None,
                               calib=cal_factor, fps=camera_fps, verbose=1)
 
     # ***** Multi PLOT *****
     # viz_video.multiplot(flodir, ext=ext, start_at=0, num_images=5000)
 
     # ***** VIDEO *****
-    # viz_video.video(flodir, start_at=8100, num_images=400, fps=3, ext="mp4")
+    viz_video.video(flodir, start_at=1800, num_images=400, fps=3, ext="mp4")
     #viz_video.video(flodir, start_at=9900, num_images=-1, fps=30, ext="mp4")
-    start_id = [0.2, 0.3, 0.37, 0.44, 0.5, 0.55]  # [s]
+    start_id = [0.01, 0.07, 0.09, 0.3, 0.5, 1.0, 1.5]  # [s]
     for id in start_id:
         id_frame = int(camera_fps * id)
         viz_video.video(flodir, start_at=id_frame, num_images=400, fps=3, ext="mp4")
@@ -85,8 +85,8 @@ if __name__ == "__main__":
 
 
     # <------------------------ Get regional velocity (uncomment for usage) ------------------------>
-    labelpath = os.path.join("./labels/Test 03 L3 NAOCL 22000 fpstif/Test 03 L3 NAOCL 22000 fpstif_04900.json")
-    flodir = "./results/Hui-LiteFlowNet/Test 03 L3 NAOCL 22000 fpstif/flow"
+    labelpath = os.path.join("./labels/Test 06 EDTA EA Full 22000 fps/.json")
+    flodir = "./results/Hui-LiteFlowNet/Test 06 EDTA EA Full 22000 fps/flow"
     v2_record = utils.region_velo(labelpath, netname, flodir, key="v2", fps=13000, calibration_factor=cal_factor,
                                   start_at=0, end_at=9000, num_flows=100, avg_step=10,
                                   verbose=1)
