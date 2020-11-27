@@ -25,7 +25,7 @@ class FlowViz:
     def __init__(self, labelpaths: List[str], netname: str, maxmotion: Optional[float] = None, vector_step: int = 1,
                  use_color: int = 0, use_quiver: bool = False, color_type: Optional[str] = None, key: str = "flow",
                  crop_window: Union[int, Tuple[int, int, int, int]] = 0, calib: float = 1.0, fps: int = 1,
-                 factor: Optional[float] = None, verbose: int = 0) -> None:
+                 factor: Optional[float] = None, use_stereo: bool = False, verbose: int = 0) -> None:
         """
         Flow visualization instance
         params:
@@ -47,6 +47,7 @@ class FlowViz:
         # Logic gate
         self.use_color = use_color
         self.use_quiver = use_quiver
+        self.use_stereo = use_stereo
         self.color_type = color_type
         self.verbose = verbose
 
@@ -60,7 +61,10 @@ class FlowViz:
 
         # Init.
         self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(1, 1, 1)
+        if use_stereo:
+            self.ax = self.fig.add_subplot(1, 1, 1, projection='3d')
+        else:
+            self.ax = self.fig.add_subplot(1, 1, 1)
         self.ax.set_xticks([])  # Erasing the axis number
         self.ax.set_yticks([])
         plt.subplots_adjust(right=0.85) if color_type in ["mag", "vort", "normal", "shear"] else None
@@ -101,6 +105,8 @@ class FlowViz:
             self.im2 = None
         if self.use_quiver:
             self.keyname += "q"
+        if self.use_stereo:
+            self.keyname += "3"
 
     def plot(self, ext: Optional[str] = None, show: bool = False, savedir: Optional[str] = None,
              **quiver_key) -> None:
@@ -294,19 +300,31 @@ class FlowViz:
 
         # Quiver init.
         if self.use_quiver:
-            x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+            if self.use_stereo:
+                x, y, z = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5, 0)
+                zp = z[::self.vector_step, ::self.vector_step]
+            else:
+                x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+                zp = None
+
             xp, yp = x[::self.vector_step, ::self.vector_step], y[::self.vector_step, ::self.vector_step]
             mag = np.hypot(xp, yp)
             width_factor = 0.004
 
-            if not self.use_color:
-                # Setting the vector color
-                colormap = self.scalar_map.get_cmap()
-                self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(mag),
-                                             cmap=colormap, units='xy', width=width_factor*w, scale=width_factor*100)
-            else:
-                self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp),
+            if self.use_stereo:  #TODO: Recheck the stereo plotting init.
+                assert zp is not None
+                self.quiver = self.ax.quiver(xp, yp, zp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(zp),
                                              units='xy', width=width_factor*w, scale=width_factor*100)
+            else:
+                if not self.use_color:
+                    # Setting the vector color
+                    colormap = self.scalar_map.get_cmap()
+                    self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(mag),
+                                                 units='xy', width=width_factor*w, scale=width_factor*100,
+                                                 cmap=colormap)
+                else:
+                    self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp),
+                                                 units='xy', width=width_factor*w, scale=width_factor*100)
 
             qk = self.ax.quiverkey(self.quiver, **quiver_key) if quiver_key else None
 
@@ -318,6 +336,7 @@ class FlowViz:
             self.factor = self.calib * 1000
 
         u, v = flow[:, :, 0], flow[:, :, 1]
+        w = flow[:, :, 2] if self.use_stereo else None  # Stereo plotting option
 
         # Image masking
         if self.color_type in ["vort", "shear", "normal"]:
@@ -360,9 +379,9 @@ class FlowViz:
             self.im1.set_data(image)
 
         # Adding quiver plot (if necessary)
-        self._q_plot(u, v, mask) if self.use_quiver else None
+        self._q_plot(mask, u, v, w) if self.use_quiver else None
 
-    def _q_plot(self, u, v, mask) -> None:
+    def _q_plot(self, mask, u, v, w: Optional[np.array] = None) -> None:
         """
         Quiver plot config.
         params:
@@ -371,21 +390,43 @@ class FlowViz:
             mask: The masking array.
         """
         # Normalizing the flow
+        height, width = u.shape
         u, v = u / self.velocity_factor, v / self.velocity_factor
 
-        # Slicing the flow vector
+        # Vector slicing (flow and mask)
         up, vp = u[::self.vector_step, ::self.vector_step], v[::self.vector_step, ::self.vector_step]
-        mag = self.norm(np.hypot(up, vp))
+        maskp = mask[::self.vector_step, ::self.vector_step]
+
+        # Stereo flo option
+        if w is not None:
+            w = w / self.velocity_factor
+            wp = w[::self.vector_step, ::self.vector_step]
+            mag = np.linalg.norm(np.dstack([up, vp, wp]), axis=-1)
+            wp[~maskp] = np.nan
+        else:
+            mag = np.hypot(up, vp)
+            wp = None
 
         # Plotting preparation and Masking the data
-        maskp = mask[::self.vector_step, ::self.vector_step]
         up[~maskp], vp[~maskp] = np.nan, np.nan
 
-        # Adding vector values
-        if not self.use_color:
-            self.quiver.set_UVC(up, -vp, C=mag)
+        # Updating quiver plot with the latest vector values
+        if self.use_stereo:  #TODO: Test the quiver3d vector update for Stereo plotting!
+            x, y, z = np.meshgrid(np.arange(width) + 0.5, np.arange(height) + 0.5, 0)
+            xp = x[::self.vector_step, ::self.vector_step]
+            yp = y[::self.vector_step, ::self.vector_step]
+            zp = z[::self.vector_step, ::self.vector_step]
+            new_segs = (xp, yp, zp, up, vp, wp)
+            self.quiver.set_segments(*new_segs)
+
+            if not self.use_color:  #TODO: Test the quiver3d COLOR update!
+                mag_rgb = np.uint8(self.scalar_map.to_rgba(mag) * 255)[:, :, :3]
+                self.quiver.set_color(mag_rgb)
         else:
-            self.quiver.set_UVC(up, -vp)
+            if not self.use_color:
+                self.quiver.set_UVC(up, -vp, C=self.norm(mag))
+            else:
+                self.quiver.set_UVC(up, -vp)
 
 
 def get_image(basename, imdir, crop_window: Union[int, Tuple[int, int, int, int]] = 0) -> np.array:
