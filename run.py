@@ -12,7 +12,7 @@ from utils import Inference, hui_liteflownet, piv_liteflownet, flowname_modifier
 
 maindir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(maindir)
-pivdir = os.path.join(os.path.dirname(maindir), "thesis_faber")
+pivdir = os.path.join(os.path.dirname(maindir), "piv-liteflownet")
 
 
 if __name__ == '__main__':

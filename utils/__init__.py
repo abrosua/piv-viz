@@ -11,7 +11,7 @@ maindir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(maindir)
 
 # Importing from LiteFlowNet
-pivdir = os.path.join(os.path.dirname(maindir), "thesis_faber")
+pivdir = os.path.join(os.path.dirname(maindir), "piv-liteflownet")
 sys.path.append(pivdir)
 from src.utils_plot import read_flow, read_flow_collection, array_cropper
 from src.postpro import calc_vorticity, de_vort
