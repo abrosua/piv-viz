@@ -1,9 +1,31 @@
 import os
 import shutil
 from glob import glob
-from typing import Tuple
+from typing import Tuple, Optional, Union
 
 import cv2
+
+
+def split_abspath(path: str, cutting_path: Optional[Union[str, int]] = None) -> Tuple[str, str]:
+	cleanpath = os.path.normpath(os.path.abspath(path))
+	cleanpath_sep = cleanpath.split(os.sep)
+
+	if cleanpath_sep[0] == "":  # To join the List as an Absolute path
+		cleanpath_sep[0] = os.sep
+
+	if cutting_path is None:
+		frontpath_sep = cleanpath_sep
+		backpath_sep = [""]
+	elif type(cutting_path) is int:
+		frontpath_sep = cleanpath_sep[:cutting_path]
+		backpath_sep = cleanpath_sep[cutting_path:]
+	elif type(cutting_path) is str:
+		frontpath_sep = cleanpath_sep[:cleanpath_sep.index(cutting_path)]
+		backpath_sep = cleanpath_sep[cleanpath_sep.index(cutting_path):]
+	else:
+		raise ValueError(f"UNKNOWN format of the 'cutting_path' ({cutting_path}) input!")
+
+	return os.path.join(*frontpath_sep), os.path.join(*backpath_sep)
 
 
 def getpair(dir: str, n_images: int = 2, start_at: int = 0,
