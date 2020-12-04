@@ -2,6 +2,7 @@ import os
 import json
 from glob import glob
 from typing import Optional, List, Tuple
+import pathlib as Path
 
 import numpy as np
 import pandas as pd
@@ -16,7 +17,7 @@ matplotlib.use('TkAgg')
 
 
 class Label:
-    def __init__(self, labelpath: str, netname: str, verbose: int = 0) -> None:
+    def __init__(self, labelpath: str, flodir: str, verbose: int = 0) -> None:
         """
         Acquiring all the available label as a dictionary.
         params:
@@ -28,6 +29,10 @@ class Label:
         self.verbose = verbose
         self.label = {}
 
+        # Obtaining the working directory
+        flodir = utils.split_abspath(flodir)[0]
+        workdir, _ = utils.split_abspath(flodir, cutting_path="results")
+
         # Importing the Labels
         if not os.path.isfile(labelpath):  # Label file checking
             raise ValueError(f"Label file at '{labelpath}' is NOT FOUND!")
@@ -37,9 +42,10 @@ class Label:
             self.img_shape = [data['imageHeight'], data['imageWidth']]
 
             # Image path
-            imname = os.path.basename(data["imagePath"])
-            self.img_dir = os.path.basename(os.path.dirname(data["imagePath"]))
-            self.img_path = os.path.join("./frames", self.img_dir, imname)
+            _, endpath = utils.split_abspath(data["imagePath"], cutting_path="frames")
+            self.img_dir = endpath.split(os.sep)[1]  # Take the path after "frames"
+            self.img_path = os.path.join(workdir, endpath)
+            imname = os.path.basename(self.img_path)
 
             for d in data['shapes']:
                 labelkey = d['label']
@@ -51,9 +57,16 @@ class Label:
                     self.label[labelkey]['points'].append(d['points'])
 
         # Importing the Flow files
-        floname = os.path.splitext(imname)[0] + "_out.flo"
-        basedir = self.img_dir
-        self.flopath = os.path.join("./results", netname, basedir, "flow", floname)
+        flocheck = os.path.basename(flodir).lower()
+        if flocheck == "flow":
+            bname = os.path.splitext(imname)[0]
+            ext = "_out.flo"
+        else:
+            bname = imname.rsplit("-", 1)[0]
+            ext = f"-{flocheck[0].upper()}_out.flo"
+
+        floname = bname + ext
+        self.flopath = os.path.join(flodir, floname)
 
         if not os.path.isfile(self.flopath):  # Flow file checking
             raise ValueError(f"Flow file at '{self.flopath}' is NOT FOUND!")
@@ -249,7 +262,7 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
     """
     # Init.
     assert os.path.isdir(flodir)
-    name_list = os.path.normpath(flodir).split(os.sep)
+    name_list = utils.split_abspath(flodir).split(os.sep)
     floname, netname = str(name_list[-2]), str(name_list[-3])
     velo_factor = fps * calib
 

@@ -22,10 +22,10 @@ matplotlib.use('TkAgg')
 
 
 class FlowViz:
-    def __init__(self, labelpaths: List[str], netname: str, maxmotion: Optional[float] = None, vector_step: int = 1,
+    def __init__(self, labelpaths: List[str], flodir: str, maxmotion: Optional[float] = None, vector_step: int = 1,
                  use_color: int = 0, use_quiver: bool = False, color_type: Optional[str] = None, key: str = "flow",
                  crop_window: Union[int, Tuple[int, int, int, int]] = 0, calib: float = 1.0, fps: int = 1,
-                 factor: Optional[float] = None, use_stereo: bool = False, verbose: int = 0) -> None:
+                 post_factor: Optional[float] = None, use_stereo: bool = False, verbose: int = 0) -> None:
         """
         Flow visualization instance
         params:
@@ -41,8 +41,11 @@ class FlowViz:
         if color_type is not None:
             assert color_type in ["vort", "shear", "normal", "mag"]
 
+        # # -----> Setting up the directory
         self.labelpaths = labelpaths
-        self.netname = netname
+        self.flodir = flodir
+        self.workdir = utils.split_abspath(flodir, cutting_path="flow")[0]
+        self.img_bname = os.path.basename(self.workdir)
 
         # Logic gate
         self.use_color = use_color
@@ -55,7 +58,7 @@ class FlowViz:
         self.maxmotion = maxmotion
         self.vector_step = vector_step
         self.crop_window = crop_window
-        self.fps, self.calib, self.factor = fps, calib, factor
+        self.fps, self.calib, self.post_factor = fps, calib, post_factor
         self.velocity_factor = calib * fps
         self.key = key
 
@@ -70,7 +73,7 @@ class FlowViz:
         plt.subplots_adjust(right=0.85) if color_type in ["mag", "vort", "normal", "shear"] else None
 
         self.im1, self.quiver = None, None
-        self.img_dir, self.keyname = "", ""
+        self.keyname = ""
 
         # Scalar mapping
         if color_type in ["vort", "shear", "normal"]:
@@ -116,9 +119,8 @@ class FlowViz:
         init_plot = True
 
         for labelpath in self.labelpaths:
-            label = utils.Label(labelpath, self.netname, verbose=self.verbose)
+            label = utils.Label(labelpath, self.flodir, verbose=self.verbose)
             bname = os.path.splitext(os.path.basename(labelpath))[0]
-            self.img_dir = bname.rsplit("_", 1)[0]
 
             # Add flow field
             flow, mask = label.get_flo(self.key)
@@ -143,47 +145,52 @@ class FlowViz:
                 plt.show()
 
             if ext:
-                # Setting up the path name
-                plotdir = os.path.join("./results", self.netname, self.img_dir, "viz") if savedir is None else savedir
+                # -----> Setting up the path name
+                plotdir = os.path.join(self.workdir, "viz") if savedir is None else savedir
                 os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
-                # Saving the plot
+                # -----> Saving the plot
                 plotpath = os.path.join(plotdir, bname + f"_{self.keyname}viz.{ext}")
                 plt.savefig(plotpath, dpi=300, bbox_inches='tight')
 
             plt.clf()
 
-    def multiplot(self, flodir: str, ext: Optional[str] = None, show: bool = False, imgext: str = "tif",
-                  start_at: int = 0, num_images: int = -1) -> None:
+    def multiplot(self, ext: Optional[str] = None, show: bool = False, start_at: int = 0, num_images: int = -1
+                  ) -> None:
         """
         Generating multiple image plots with a single label.
         """
         # Flow init.
         assert num_images != 0
-        flonames = sorted(glob(os.path.join(flodir, "*.flo")))
+        flonames = sorted(glob(os.path.join(self.flodir, "*.flo")))
         flonames = flonames[start_at:] if num_images < 0 else flonames[start_at : num_images+start_at]
         num_images = len(flonames) if num_images < 0 else num_images
-
-        self.img_dir = str(os.path.normpath(flodir).split(os.sep)[-2])
-        imgdir = os.path.join("./frames", self.img_dir)
-        plotdir = os.path.join(os.path.dirname(flodir), f"plot-{start_at}_{num_images}")
-        os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
 
         # Frame looping init.
         if len(self.labelpaths) > 1:
             raise ValueError(f"Multiple labelpaths are found! ('{self.labelpaths}')")
         assert os.path.isfile(self.labelpaths[0])
 
-        label = utils.Label(self.labelpaths[0], self.netname, verbose=self.verbose)
+        label = utils.Label(self.labelpaths[0], self.flodir, verbose=self.verbose)
+        imgext = os.path.splitext(label.img_path)[-1]
         _, mask = label.get_flo(self.key)  # Create the mask
         mask_crop = utils.array_cropper(mask, self.crop_window)
 
+        # Initiating directory naming
+        imgdir = os.path.dirname(label.img_path)
+        plotdir = os.path.join(self.workdir, f"plot-{start_at}_{num_images}")
+        os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
+
         is_init = False
 
-        for i, floname in tqdm(enumerate(flonames), desc=self.img_dir, unit="image", total=len(flonames)):
+        for i, floname in tqdm(enumerate(flonames), desc=self.img_bname, unit="image", total=len(flonames)):
             bname = os.path.basename(floname).rsplit("_", 1)[0]
+            if os.path.basename(imgdir).lower() in ["left", "right"]:
+                bname_ext = f"-{os.path.basename(imgdir)[0].upper()}"
+            else:
+                bname_ext = ""
 
             # Importing the image
-            imagepath = os.path.join(imgdir, bname + f".{imgext}")
+            imagepath = os.path.join(imgdir, bname + bname_ext + f".{imgext}")
             img = np.array(Image.open(imagepath).convert("RGB"))
             img_crop = utils.array_cropper(img, self.crop_window)
 
@@ -205,35 +212,30 @@ class FlowViz:
 
             # plt.clf()
 
-    def video(self, flodir: str, ext: Optional[str] = None, imgext: str = "tif",
-              start_at: int = 0, num_images: int = -1, fps: int = 1, dpi: int = 300) -> None:
+    def video(self, ext: Optional[str] = None, start_at: int = 0, num_images: int = -1, fps: int = 1, dpi: int = 300
+              ) -> None:
         """
         Generating video
         """
         # Flow init.
-        flows, flonames = utils.read_flow_collection(flodir, start_at=start_at, num_images=num_images,
+        flows, flonames = utils.read_flow_collection(self.flodir, start_at=start_at, num_images=num_images,
                                                      crop_window=self.crop_window)
         flows = flows * self.velocity_factor
 
         assert num_images != 0
         num_images = len(flonames) if num_images < 0 else num_images
-
         fname_addition = f"-{start_at}_{num_images}"
-        self.img_dir = str(os.path.normpath(flodir).split(os.sep)[-2])
-        imgdir = os.path.join("./frames", self.img_dir)
 
         # Frame looping init.
-        labelpaths, imagepaths = [], []
+        labelpaths = []
 
         for i, floname in enumerate(flonames):
-            bname = os.path.basename(floname).rsplit("_", 1)[0]
-            imagepaths.append(os.path.join(imgdir, bname + f".{imgext}"))
-
             if len(self.labelpaths) == 1:
                 labelpath = self.labelpaths[0]
                 labelpaths.append(labelpath)
 
             elif len(self.labelpaths) > 1:
+                bname = os.path.basename(floname).rsplit("_", 1)[0]
                 labeldir = os.path.dirname(self.labelpaths[0])
                 labelpath = os.path.join(labeldir, bname + ".json")
                 assert labelpath in self.labelpaths
@@ -244,18 +246,18 @@ class FlowViz:
             assert os.path.isfile(labelpath)
 
         # Initialize frame
-        # img = imageio.imread(imagepaths[0])
-        img = np.array(Image.open(imagepaths[0]).convert("RGB"))
+        label = utils.Label(labelpaths[0], flodir=self.flodir, verbose=self.verbose)
+        img = np.array(Image.open(label.img_path).convert("RGB"))
         img_tmp = utils.array_cropper(img, self.crop_window)
         self._init_frame(img_tmp)
 
         # Generate animation writer
-        flowviz_anim = animation.FuncAnimation(self.fig, self._capture_frame, fargs=(labelpaths, imagepaths, flows),
+        flowviz_anim = animation.FuncAnimation(self.fig, self._capture_frame, fargs=(labelpaths, flonames, flows),
                                                interval=1000/fps, frames=num_images)
-        vidname = self.img_dir + fname_addition + f"_{self.keyname}vid"
+        vidname = self.img_bname + fname_addition + f"_{self.keyname}vid"
 
         if ext is not None:
-            vidpath = os.path.join(os.path.dirname(flodir), "videos", vidname + f".{ext}")
+            vidpath = os.path.join(self.workdir, "videos", vidname + f".{ext}")
             if not os.path.isdir(os.path.dirname(vidpath)):
                 os.makedirs(os.path.dirname(vidpath))
 
@@ -268,20 +270,30 @@ class FlowViz:
 
         self.ax.cla()
 
-    def _capture_frame(self, idx, labelpaths: List[str], imagepaths: List[str], flows: np.array):
+    def _capture_frame(self, idx, labelpaths: List[str], flonames: List[str], flows: np.array):
         """
         Iteration function for capturing vidoe frame.
         """
         labelpath = labelpaths[idx]
-        imagepath = imagepaths[idx]
+        floname = flonames[idx]
 
-        # Instantiate the Label
-        label = utils.Label(labelpath, netname=self.netname, verbose=self.verbose)
+        # Instantiate the Label object
+        label = utils.Label(labelpath, flodir=self.flodir, verbose=self.verbose)
         _, mask = label.get_flo(self.key)
 
+        # Instantiate the image file path
+        imgdir, imgname_tmp = os.path.split(label.img_path)
+        bname = os.path.basename(floname).rsplit("_", 1)[0]
+
+        if os.path.basename(os.path.dirname(floname)).lower() == "flow": # Check if the flo files are in Stereo format
+            bname_ext = os.path.splitext(imgname_tmp)[-1]
+        else:
+            bname_ext = imgname_tmp.rsplit("-", 1)[-1]
+
+        imgpath = os.path.join(imgdir, bname + bname_ext)
+
         # Gathering each frame
-        # img = imageio.imread(imagepath)
-        img = np.array(Image.open(imagepath).convert("RGB"))
+        img = np.array(Image.open(imgpath).convert("RGB"))
         img_crop = utils.array_cropper(img, self.crop_window)
         mask_crop = utils.array_cropper(mask, self.crop_window)
 
@@ -332,15 +344,15 @@ class FlowViz:
         """
         Drawing each single frame.
         """
-        if self.factor is None:
-            self.factor = self.calib * 1000
+        if self.post_factor is None:
+            self.post_factor = self.calib * 1000
 
         u, v = flow[:, :, 0], flow[:, :, 1]
         w = flow[:, :, 2] if self.use_stereo else None  # Stereo plotting option
 
         # Image masking
         if self.color_type in ["vort", "shear", "normal"]:
-            vort, shear, normal = utils.calc_vorticity(flow, calib=self.factor)
+            vort, shear, normal = utils.calc_vorticity(flow, calib=self.post_factor)
             if self.color_type == "vort":
                 flo_diff = vort
             elif self.color_type == "shear":
