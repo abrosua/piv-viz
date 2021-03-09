@@ -59,17 +59,27 @@ class Label:
         # Importing the Flow files
         flocheck = os.path.basename(flodir).lower()
         if flocheck == "flow":
-            bname = os.path.splitext(imname)[0]
+            bname, imgext = os.path.splitext(imname)
             ext = "_out.flo"
         else:
-            bname = imname.rsplit("-", 1)[0]
+            bname, imgext = imname.rsplit("-", 1)
             ext = f"-{flocheck[0].upper()}_out.flo"
 
         floname = bname + ext
         self.flopath = os.path.join(flodir, floname)
 
         if not os.path.isfile(self.flopath):  # Flow file checking
-            raise ValueError(f"Flow file at '{self.flopath}' is NOT FOUND!")
+            # Change the flopath
+            flodir_tmp, subdir_tmp = utils.split_abspath(flodir, cutting_path="flow")
+            bname_tmp, id_tmp = bname.rsplit("_", 1)
+            flodir_new = os.path.join(os.path.dirname(flodir_tmp), bname_tmp, subdir_tmp)
+            self.flopath = os.path.join(flodir_new, floname)
+
+            # Change the image path
+            imname_tmp = os.path.basename(flodir_tmp) + f"_{id_tmp}" + imgext
+            self.img_path = os.path.join(workdir, "frames", os.path.basename(flodir_tmp), imname_tmp)
+            if not os.path.isfile(self.flopath):
+                raise ValueError(f"Flow file at '{self.flopath}' is NOT FOUND!")
 
     def get_column(self) -> Optional[float]:
         """
@@ -83,7 +93,8 @@ class Label:
             print(f"The Air Column label is NOT found in '{self.label_path}'") if self.verbose else None
             return None
 
-    def get_flo(self, key, fill_with: Optional[float] = None) -> Tuple[Optional[np.array], Optional[np.array]]:
+    def get_flo(self, key, fill_with: Optional[float] = None, use_stereo: bool = False,
+                ) -> Tuple[Optional[np.array], Optional[np.array]]:
         """
         Acquiring the masked flow vector and its respective mask array.
         params:
@@ -94,7 +105,7 @@ class Label:
             flow_label = self.label[key]
 
             # Flow init.
-            out_flow = utils.read_flow(self.flopath)
+            out_flow = utils.read_flow(self.flopath, use_stereo=use_stereo)
             mask = np.full(out_flow.shape[:2], False)
             mask_flow = np.full(out_flow.shape, fill_with) if fill_with is not None else out_flow
 
@@ -249,7 +260,8 @@ def column_level(labelpaths: List[str], netname: str, fps: int = 1, calib: float
 
 
 def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0, end_at: int = -1,
-                 filename: Optional[str] = None, aggregate: Tuple[str, ...] = ('max'), calib: float = 1.0, fps: int = 1,
+                 filename: Optional[str] = None, aggregate: Tuple[str, ...] = ('max'),
+                 calib: float = 1.0, fps: int = 1, post_factor: Optional[float] = None,
                  verbose: int = 0) -> Tuple[float, np.array]:
     """
     Get maximum flow magnitude within the flow direction.
@@ -262,9 +274,11 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
     """
     # Init.
     assert os.path.isdir(flodir)
-    name_list = utils.split_abspath(flodir).split(os.sep)
+    name_list = utils.split_abspath(flodir)[0].split(os.sep)
     floname, netname = str(name_list[-2]), str(name_list[-3])
     velo_factor = fps * calib
+    if post_factor is None:
+        post_factor = calib
 
     if filename:
         savedir = os.path.dirname(filename)
@@ -273,7 +287,7 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
 
     if labelpath is not None:
         assert os.path.isfile(labelpath)
-        mask_label = Label(labelpath, netname, verbose=verbose).label["video"]
+        mask_label = Label(labelpath, flodir, verbose=verbose).label["video"]
     else:
         mask_label = None
 
@@ -289,11 +303,14 @@ def get_max_flow(flodir: str, labelpath: Optional[str] = None, start_at: int = 0
                  "normal": [[0.0] * (len(aggregate)*2 + 1)],
                  }
 
-    for i, flopath in enumerate(tqdm(flopaths, desc=f"Max flow at {floname}", unit="frame")):
+    for flopath in tqdm(flopaths, desc=f"Max flow at {floname}", unit="frame"):
         flow = utils.read_flow(flopath)
         flow = flow * velo_factor  # Calibrate flow into real velocity
-        vort, shear, normal = utils.calc_vorticity(flow, calib=calib)
-        time_id = (i + 1) / fps
+        vort, shear, normal = utils.calc_vorticity(flow, calib=post_factor)
+
+        # Time frame indexing
+        idx = int(os.path.splitext(flopath)[0].split("_")[-2])
+        time_id = (idx + 1) / fps
 
         if mask_label is not None:
             mask = shape_to_mask(flow.shape[:2], mask_label["points"][0], shape_type=mask_label['shape_type'])
