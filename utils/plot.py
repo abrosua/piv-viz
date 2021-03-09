@@ -12,6 +12,7 @@ import matplotlib.cm as cm
 from matplotlib import animation
 from matplotlib import colors
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from mpl_toolkits.mplot3d import Axes3D
 from flowviz import colorflow, animate
 from PIL import Image
 from tqdm import tqdm
@@ -64,12 +65,20 @@ class FlowViz:
 
         # Init.
         self.fig = plt.figure()
+        self.is_init = False
+
         if use_stereo:
-            self.ax = self.fig.add_subplot(1, 1, 1, projection='3d')
+            self.ax = self.fig.add_subplot(1, 2, 1)
+            self.ax_stereo = self.fig.add_subplot(1, 2, 2, projection='3d')
+            self.ax_stereo.set_xlabel('X')
+            self.ax_stereo.set_ylabel('Y')
+            self.ax_stereo.set_zlabel('Z')
+            self.ax_stereo.set_zlim3d(0, maxmotion)
         else:
             self.ax = self.fig.add_subplot(1, 1, 1)
-        self.ax.set_xticks([])  # Erasing the axis number
-        self.ax.set_yticks([])
+            self.ax.set_xticks([])  # Erasing the axis number
+            self.ax.set_yticks([])
+
         plt.subplots_adjust(right=0.85) if color_type in ["mag", "vort", "normal", "shear"] else None
 
         self.im1, self.quiver = None, None
@@ -123,7 +132,7 @@ class FlowViz:
             bname = os.path.splitext(os.path.basename(labelpath))[0]
 
             # Add flow field
-            flow, mask = label.get_flo(self.key)
+            flow, mask = label.get_flo(self.key, use_stereo=self.use_stereo)
             if flow is None or mask is None:  # Skipping label file that doesn't have the flow label!
                 continue
             else:
@@ -154,8 +163,8 @@ class FlowViz:
 
             plt.clf()
 
-    def multiplot(self, ext: Optional[str] = None, show: bool = False, start_at: int = 0, num_images: int = -1
-                  ) -> None:
+    def multiplot(self, ext: Optional[str] = None, show: bool = False, start_at: int = 0, num_images: int = -1,
+                  use_image: bool = True) -> None:
         """
         Generating multiple image plots with a single label.
         """
@@ -172,15 +181,14 @@ class FlowViz:
 
         label = utils.Label(self.labelpaths[0], self.flodir, verbose=self.verbose)
         imgext = os.path.splitext(label.img_path)[-1]
-        _, mask = label.get_flo(self.key)  # Create the mask
+        _, mask = label.get_flo(self.key, use_stereo=self.use_stereo)  # Create the mask
         mask_crop = utils.array_cropper(mask, self.crop_window)
+        height, width = label.img_shape
 
         # Initiating directory naming
         imgdir = os.path.dirname(label.img_path)
         plotdir = os.path.join(self.workdir, f"plot-{start_at}_{num_images}")
         os.makedirs(plotdir) if not os.path.isdir(plotdir) else None
-
-        is_init = False
 
         for i, floname in tqdm(enumerate(flonames), desc=self.img_bname, unit="image", total=len(flonames)):
             bname = os.path.basename(floname).rsplit("_", 1)[0]
@@ -190,15 +198,16 @@ class FlowViz:
                 bname_ext = ""
 
             # Importing the image
-            imagepath = os.path.join(imgdir, bname + bname_ext + f".{imgext}")
-            img = np.array(Image.open(imagepath).convert("RGB"))
+            imagepath = os.path.join(imgdir, bname + bname_ext + f"{imgext}")
+            img = np.array(Image.open(imagepath).convert("RGB")) if use_image else np.zeros([height, width, 3], dtype=np.uint8)
             img_crop = utils.array_cropper(img, self.crop_window)
 
             # Add flow field
-            flow_crop = utils.read_flow(floname, crop_window=self.crop_window) * self.velocity_factor
-            if not is_init:
+            flow_crop = utils.read_flow(floname, use_stereo=self.use_stereo, crop_window=self.crop_window
+                                        ) * self.velocity_factor
+            if not self.is_init:
                 self._init_frame(img_crop)  # Initialize the frame
-                is_init = True
+                self.is_init = True
             self._draw_frame(flow_crop, img_crop, mask_crop)  # Drawing each frame
 
             if show:
@@ -219,7 +228,7 @@ class FlowViz:
         """
         # Flow init.
         flows, flonames = utils.read_flow_collection(self.flodir, start_at=start_at, num_images=num_images,
-                                                     crop_window=self.crop_window)
+                                                     use_stereo=self.use_stereo, crop_window=self.crop_window)
         flows = flows * self.velocity_factor
 
         assert num_images != 0
@@ -279,7 +288,7 @@ class FlowViz:
 
         # Instantiate the Label object
         label = utils.Label(labelpath, flodir=self.flodir, verbose=self.verbose)
-        _, mask = label.get_flo(self.key)
+        _, mask = label.get_flo(self.key, use_stereo=self.use_stereo)
 
         # Instantiate the image file path
         imgdir, imgname_tmp = os.path.split(label.img_path)
@@ -303,47 +312,44 @@ class FlowViz:
         """
         Initializing frame for video writer.
         """
-        h, w, _ = image.shape
-
         # Image init.
+        h, w, _ = image.shape
         self.im1 = self.ax.imshow(np.zeros_like(image))
-        if self.use_color == 2:
-            self.im2 = self.ax.imshow(np.zeros([h, w, 4], dtype=image.dtype))
+        self.im2 = self.ax.imshow(np.zeros([h, w, 4], dtype=image.dtype)) if self.use_color == 2 else None
 
         # Quiver init.
         if self.use_quiver:
-            if self.use_stereo:
-                x, y, z = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5, 0)
-                zp = z[::self.vector_step, ::self.vector_step]
-            else:
-                x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
-                zp = None
-
+            x, y = np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
             xp, yp = x[::self.vector_step, ::self.vector_step], y[::self.vector_step, ::self.vector_step]
             mag = np.hypot(xp, yp)
             width_factor = 0.004
 
-            if self.use_stereo:  #TODO: Recheck the stereo plotting init.
-                assert zp is not None
-                self.quiver = self.ax.quiver(xp, yp, zp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(zp),
-                                             units='xy', width=width_factor*w, scale=width_factor*100)
+            if not self.use_color:
+                # Setting the vector color
+                colormap = self.scalar_map.get_cmap()
+                self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(mag),
+                                             units='xy', width=width_factor*w, scale=width_factor*100, cmap=colormap)
             else:
-                if not self.use_color:
-                    # Setting the vector color
-                    colormap = self.scalar_map.get_cmap()
-                    self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp), np.zeros_like(mag),
-                                                 units='xy', width=width_factor*w, scale=width_factor*100,
-                                                 cmap=colormap)
-                else:
-                    self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp),
-                                                 units='xy', width=width_factor*w, scale=width_factor*100)
+                self.quiver = self.ax.quiver(xp, yp, np.zeros_like(xp), np.zeros_like(yp),
+                                             units='xy', width=width_factor*w, scale=width_factor*100)
 
             qk = self.ax.quiverkey(self.quiver, **quiver_key) if quiver_key else None
+
+            if self.use_stereo:  #TODO: Recheck the stereo plotting init.
+                xs, ys = np.expand_dims(xp, axis=-1), np.expand_dims(yp, axis=-1)
+                zs = np.zeros_like(xs)
+
+                self.im_stereo = self.ax_stereo.plot_surface(x, y, np.zeros_like(x), linewidth=0, rstride=50,
+                                                             cstride=50)
+                self.quiver_stereo = self.ax_stereo.quiver(*(xs, ys, zs, zs, zs, zs), normalize=True) \
+                    if self.use_color else \
+                    self.ax_stereo.quiver(*(xs, ys, zs, zs, zs, zs), normalize=True, cmap=self.scalar_map.get_cmap())
 
     def _draw_frame(self, flow: np.array, image: np.array, mask: np.array):
         """
         Drawing each single frame.
         """
+        height, width, n_band = flow.shape
         if self.post_factor is None:
             self.post_factor = self.calib * 1000
 
@@ -360,10 +366,12 @@ class FlowViz:
             else:
                 flo_diff = normal
 
+            flo_diff = flo_diff / np.max(flo_diff) if self.maxmotion is None else flo_diff  # No maxflow input
             flo_rgb = np.uint8(self.scalar_map.to_rgba(flo_diff) * 255)[:, :, :3]
             flo_alpha = np.abs(flo_diff)  # Setting up the transparency mask
         elif self.color_type == "mag":
             flo_alpha = np.linalg.norm(flow, axis=-1)  # Calculate the flow magnitude
+            flo_alpha = flo_alpha / np.max(flo_alpha) if self.maxmotion is None else flo_alpha  # No maxflow input
             flo_rgb = np.uint8(self.scalar_map.to_rgba(flo_alpha) * 255)[:, :, :3]
         else:
             flo_alpha = np.linalg.norm(flow, axis=-1)  # Calculate the flow magnitude
@@ -378,17 +386,21 @@ class FlowViz:
         elif self.use_color == 1:
             flo_rgb[~mask] = 0  # Merging image and plot the result
             image[mask] = 0
-            self.im1.set_data(image + flo_rgb)
+            image += flo_rgb
+            self.im1.set_data(image)
         elif self.use_color == 2:
             flo_rgb[~mask] = 255
-            # alpha = np.uint8((flo_alpha - np.min(flo_alpha)) * 255 / (np.max(flo_alpha) - np.min(flo_alpha)))
-            alpha = np.uint8(flo_alpha * 255 / self.maxmotion)
+            alpha = np.uint8((flo_alpha - np.min(flo_alpha)) * 255 / (np.max(flo_alpha) - np.min(flo_alpha)))
+            # alpha = np.uint8(flo_alpha * 255 / self.maxmotion)
             flo_rgba = np.dstack([flo_rgb, alpha])
 
             self.im1.set_data(image)
             self.im2.set_data(flo_rgba)
         else:
             self.im1.set_data(image)
+
+        # TODO: Check the image plotting for stereo viz
+        # self.im_stereo.set_facecolors(image.reshape(-1, 3) / 255) if self.use_stereo else None
 
         # Adding quiver plot (if necessary)
         self._q_plot(mask, u, v, w) if self.use_quiver else None
@@ -408,37 +420,36 @@ class FlowViz:
         # Vector slicing (flow and mask)
         up, vp = u[::self.vector_step, ::self.vector_step], v[::self.vector_step, ::self.vector_step]
         maskp = mask[::self.vector_step, ::self.vector_step]
+        mag = np.hypot(up, vp)
 
-        # Stereo flo option
-        if w is not None:
-            w = w / self.velocity_factor
-            wp = w[::self.vector_step, ::self.vector_step]
-            mag = np.linalg.norm(np.dstack([up, vp, wp]), axis=-1)
-            wp[~maskp] = np.nan
-        else:
-            mag = np.hypot(up, vp)
-            wp = None
-
-        # Plotting preparation and Masking the data
-        up[~maskp], vp[~maskp] = np.nan, np.nan
-
-        # Updating quiver plot with the latest vector values
+        # Stereo flo visualization option
         if self.use_stereo:  #TODO: Test the quiver3d vector update for Stereo plotting!
+            assert w is not None
+            wp = w[::self.vector_step, ::self.vector_step] / self.velocity_factor
+            mag_stereo = np.linalg.norm(np.dstack([up, vp, wp]), axis=-1)
+            up[~maskp], vp[~maskp], wp[~maskp] = np.nan, np.nan, np.nan
+
             x, y, z = np.meshgrid(np.arange(width) + 0.5, np.arange(height) + 0.5, 0)
             xp = x[::self.vector_step, ::self.vector_step]
             yp = y[::self.vector_step, ::self.vector_step]
             zp = z[::self.vector_step, ::self.vector_step]
-            new_segs = (xp, yp, zp, up, vp, wp)
-            self.quiver.set_segments(*new_segs)
+            segs = (xp, yp, zp, np.expand_dims(up, axis=-1), np.expand_dims(vp, axis=-1), np.expand_dims(wp, axis=-1))
+            segs_flatten = np.array(segs).reshape(6, -1)
+            segs_new = [[[xs, ys, zs], [us, vs, ws]] for xs, ys, zs, us, vs, ws in zip(*segs_flatten.tolist())]
+            self.quiver_stereo.set_segments(segs_new)
 
             if not self.use_color:  #TODO: Test the quiver3d COLOR update!
-                mag_rgb = np.uint8(self.scalar_map.to_rgba(mag) * 255)[:, :, :3]
-                self.quiver.set_color(mag_rgb)
+                mag_rgb = np.uint8(self.scalar_map.to_rgba(mag_stereo))[:, :, :3]
+                self.quiver_stereo.set_color(mag_rgb.reshape(-1, 3))
         else:
-            if not self.use_color:
-                self.quiver.set_UVC(up, -vp, C=self.norm(mag))
-            else:
-                self.quiver.set_UVC(up, -vp)
+            up[~maskp], vp[~maskp] = np.nan, np.nan
+            mag_stereo = mag
+
+        # Updating quiver plot with the latest vector values
+        if not self.use_color:
+            self.quiver.set_UVC(up, -vp, C=self.norm(mag_stereo))
+        else:
+            self.quiver.set_UVC(up, -vp)
 
 
 def get_image(basename, imdir, crop_window: Union[int, Tuple[int, int, int, int]] = 0) -> np.array:
