@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     netname = "Hui-LiteFlowNet"
     imgdir = "Test 06 EDTA EA Full 22000 fps"
-    flodir = "./results/Hui-LiteFlowNet/Test 06 EDTA EA Full 22000 fps/flow"
+    flodir = os.path.join("./results/Hui-LiteFlowNet", imgdir, "flow")
     labelpaths = sorted(glob(os.path.join("./labels", imgdir, "*.json")))
 
     #  <-------------- Calculate max velo, calibrartion factor and  colormap (Uncomment if used) -------------->

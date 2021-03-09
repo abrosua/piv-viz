@@ -19,12 +19,12 @@ if __name__ == "__main__":
 
     netname = "PIV-LiteFlowNet-en"
     imgdir = "test-stereo"
-    flodir = "../work/results/PIV-LiteFlowNet-en/test-stereo/flow/left"
+    flodir = "../work/results/PIV-LiteFlowNet-en/test-stereo/flow/stereo"
     workdir = "../work"
     labelpaths = sorted(glob(os.path.join(workdir, "labels", imgdir, "*.json")))
 
     #  <-------------- Calculate max velo, calibrartion factor and  colormap (Uncomment if used) -------------->
-    max_velo_mag_real = None  # [mm/s] (use None if NOT needed!) - 3000 or 7500 for NAOCL flow
+    max_velo_mag_real = 27  # [mm/s] (use None if NOT needed!) - 3000 or 7500 for NAOCL flow
 
     # Vorticity/Shear stress
     max_vort_real = 32  # [1/ms] (use None if NOT needed!)
@@ -43,11 +43,11 @@ if __name__ == "__main__":
     # column_level, _ = utils.column_level(labelpaths, netname, fps=13000, show=True, verbose=1)
 
     # <------------------------ FlowViz main script (uncomment for usage) ------------------------>
-    step = 5
+    step = 80
     cropper = 0 # (100, 0, 0, 0); Default value is 0
-    viz_plot = utils.FlowViz(labelpaths, flodir, vector_step=step, use_quiver=True, use_color=2, color_type="mag",
+    viz_plot = utils.FlowViz(labelpaths, flodir, vector_step=step, use_quiver=True, use_color=0, color_type="mag",
                              key="flow", maxmotion=max_velo_mag_real, crop_window=cropper, verbose=1,
-                             use_stereo=False)
+                             use_stereo=True)
     viz_plot.plot(ext=ext, show=show_figure)
 
     vid_labelpath = [os.path.join(workdir, "labels", imgdir, "30-5-000.json")]
